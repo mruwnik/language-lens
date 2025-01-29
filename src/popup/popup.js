@@ -346,6 +346,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Set current language (default to Japanese if not set)
     let currentLang = data.lastLanguage || "ja";
     elements.langSelect.value = currentLang;
+    
+    // Initialize dictionary if needed
+    const langData = await browser.storage.local.get(currentLang);
+    if (!langData[currentLang]) {
+        // Initialize with default dictionary for the current language
+        const defaultDict = defaultDictionaries[currentLang];
+        if (defaultDict) {
+            await browser.storage.local.set({ 
+                lastLanguage: currentLang,
+                [currentLang]: JSON.parse(JSON.stringify(defaultDict))
+            });
+        }
+    }
 
     // Initialize or load current language data
     let currentLangData = await loadLanguageData(currentLang);
@@ -355,6 +368,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         const newLang = elements.langSelect.value.trim().toLowerCase();
         await browser.storage.local.set({ lastLanguage: newLang });
         currentLang = newLang;
+
+        // Check and initialize dictionary if needed
+        const langData = await browser.storage.local.get(currentLang);
+        if (!langData[currentLang]) {
+            const defaultDict = defaultDictionaries[currentLang];
+            if (defaultDict) {
+                await browser.storage.local.set({ 
+                    [currentLang]: JSON.parse(JSON.stringify(defaultDict))
+                });
+            }
+        }
+
         currentLangData = await loadLanguageData(currentLang);
         updateFormPlaceholders(currentLang, elements.newTranslation, elements.newFurigana);
         renderWords(currentLang, currentLangData);

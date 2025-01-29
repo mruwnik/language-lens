@@ -4,10 +4,12 @@ const commonjs = require('@rollup/plugin-commonjs');
 const copy = require('rollup-plugin-copy');
 const path = require('path');
 
+const BUILD_DIR = 'dist/build';
+
 const createConfig = (input, output) => ({
   input,
   output: {
-    file: `dist/${output}`,
+    file: path.join(BUILD_DIR, output),
     format: 'iife',
     compact: true
   },
@@ -38,22 +40,25 @@ module.exports = [
     // Empty config just for copying files
     input: 'src/lib/empty.js',
     output: {
-      file: 'dist/empty.js'
+      file: path.join(BUILD_DIR, 'empty.js')
     },
     plugins: [
       copy({
         targets: [
           { 
-            src: 'public/*', 
-            dest: 'dist',
-            ignore: ['.DS_Store']
+            src: ['public/*', 'public/icons/*'],
+            dest: BUILD_DIR
           },
           {
             src: 'src/lib/*',
-            dest: 'dist/lib',
-            ignore: ['.DS_Store']
+            dest: path.join(BUILD_DIR, 'lib')
+          },
+          {
+            src: 'public/manifest.json',
+            dest: BUILD_DIR
           }
-        ]
+        ],
+        flatten: false
       })
     ]
   }

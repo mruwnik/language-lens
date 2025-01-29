@@ -1,16 +1,25 @@
 {
     "manifest_version": 3,
-    "name": "Language Learning Assistant",
-    "version": "1.0",
-    "description": "Learn languages with partial translation and word tracking",
+    "name": "Language Lens",
+    "version": "1.0.0",
+    "description": "Transform your browsing by replacing English words with foreign equivalents as you read. Choose which words to replace, toggle difficulty with kanji/character support, and reinforce learning through hover translations and native pronunciation.",
     
     "action": {
       "default_popup": "popup.html",
-      "default_title": "Language Learning Assistant"
+      "default_title": "Language Lens",
+      "default_icon": {
+        "16": "icons/icon16.png",
+        "32": "icons/icon32.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+      }
     },
   
     "icons": {
-      "48": "icons/icon48.png"
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
     },
   
     "background": {
@@ -45,9 +54,12 @@
   
     "browser_specific_settings": {
       "gecko": {
-        "id": "language-learning-assistant@example.com",
+        "id": "language-lens@example.com",
         "strict_min_version": "109.0"
       }
-    }
-  }
+    },
+
+    "author": "Your Name",
+    "homepage_url": "https://github.com/yourusername/kanji-companion"
+}
   

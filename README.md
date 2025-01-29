@@ -1,92 +1,114 @@
-# Language Learning Browser Extension
+# Kanji Companion
 
-A browser extension that helps you learn languages by providing partial translations and managing known words.
+<div align="center">
+  <img src="public/icons/icon128.png" alt="Kanji Companion Logo" width="128" height="128">
+</div>
 
-## Features
+A browser extension that makes learning Japanese more natural and effective by providing intelligent, context-aware kanji assistance as you browse the web.
 
-- Manage known words in multiple languages
-- Toggle between native script and pronunciation
-- Text-to-speech support
-- Search and filter words
-- Undo deleted words
-- Kanji usage tracking for Japanese
+## Key Features
 
-## Project Structure
+🎯 **Smart Kanji Recognition**
+- Automatically identifies kanji in web pages
+- Tracks your familiarity with each character
+- Adapts furigana display based on your knowledge level
 
-```
-language-learning-plugin/
-├── src/
-│   ├── popup/         # Popup UI related code
-│   ├── background/    # Background scripts
-│   ├── content/       # Content scripts
-│   └── lib/          # Shared utilities and data
-├── public/           # Static files
-├── tests/           # Test files
-└── dist/            # Built extension (generated)
-```
+🔍 **Contextual Learning**
+- Learn kanji in real-world context
+- Hover tooltips show meanings and readings
+- Progressive difficulty adjustment
 
-## Development
+🗣️ **Interactive Learning**
+- Built-in Japanese text-to-speech
+- Click to hear native pronunciation
+- Track your progress over time
 
-### Prerequisites
+⚡ **Performance Focused**
+- Lightweight and fast
+- Works on any webpage
+- Minimal impact on browsing experience
 
-- Node.js (v18.13.0 or higher)
-- npm or yarn
+## Installation
 
-### Setup
+### From Browser Store
+Coming soon to Firefox Add-ons and Chrome Web Store!
 
-1. Clone the repository
+### Manual Installation (Development)
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/kanji-companion.git
+   cd kanji-companion
+   ```
+
 2. Install dependencies:
    ```bash
    npm install
    ```
 
-### Development Commands
+3. Build the extension:
+   ```bash
+   npm run build
+   ```
 
-- Build the extension:
-  ```bash
-  npm run build
-  ```
+4. Load in your browser:
+   - **Firefox**:
+     1. Go to `about:debugging`
+     2. Click "This Firefox"
+     3. Click "Load Temporary Add-on"
+     4. Select any file in the `dist` directory
+   
+   - **Chrome**:
+     1. Go to `chrome://extensions`
+     2. Enable "Developer mode"
+     3. Click "Load unpacked"
+     4. Select the `dist` directory
 
-- Watch for changes during development:
-  ```bash
-  npm run dev
-  ```
+## Development
 
-- Run tests:
-  ```bash
-  npm test
-  ```
-
-- Lint code:
-  ```bash
-  npm run lint
-  ```
-
-- Format code:
-  ```bash
-  npm run format
-  ```
-
-### Loading the Extension
-
-1. Build the extension using `npm run build`
-2. Open Chrome/Firefox and go to the extensions page
-3. Enable developer mode
-4. Click "Load unpacked" and select the `dist` directory
-
-## Testing
-
-Tests are written using Jest. Run them with:
+### Commands
 
 ```bash
+# Start development mode with hot reload
+npm run dev
+
+# Build for production
+npm run build
+
+# Run tests
 npm test
+
+# Lint code
+npm run lint
+
+# Format code
+npm run format
 ```
 
-## Browser Support
+### Project Structure
 
-- Firefox (primary target)
-- Chrome/Chromium (supported)
+```
+kanji-companion/
+├── src/
+│   ├── popup/      # Extension popup UI
+│   ├── background/ # Background service worker
+│   ├── content/    # Content script for webpage integration
+│   └── lib/        # Shared utilities and data
+├── public/         # Static assets
+├── tests/          # Test suite
+└── dist/           # Built extension (generated)
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
 ## License
 
-MIT 
+[MIT](LICENSE) © Your Name
+
+---
+
+<div align="center">
+Made with ❤️ for Japanese learners
+</div> 
