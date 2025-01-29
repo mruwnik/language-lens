@@ -1,37 +1,125 @@
 // background.js
 
-// Simple in-memory cache: { "<hash_of_input>": "<translated_text>" }
-const translationCache = {};
+// Cache configuration
+const CACHE_MAX_SIZE = 1000; // Maximum number of translations to store
+const CACHE_EXPIRY_DAYS = 5;
+const CACHE_EXPIRY_MS = CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+
+// Load cache from storage on startup
+let translationCache = {};
+
+async function loadCache() {
+  try {
+    const data = await browser.storage.local.get('translationCache');
+    if (!data.translationCache) {
+      translationCache = {};
+      return;
+    }
+
+    // Filter out expired entries and convert to array for sorting
+    const now = Date.now();
+    const entries = Object.entries(data.translationCache)
+      .filter(([_, entry]) => now - entry.timestamp < CACHE_EXPIRY_MS)
+      .sort((a, b) => b[1].timestamp - a[1].timestamp); // Sort by newest first
+
+    // Keep only the newest MAX_SIZE entries
+    translationCache = entries
+      .slice(0, CACHE_MAX_SIZE)
+      .reduce((acc, [key, value]) => {
+        acc[key] = value;
+        return acc;
+      }, {});
+
+    // If we filtered anything out, save the cleaned cache
+    if (Object.keys(translationCache).length < Object.keys(data.translationCache).length) {
+      saveCache();
+    }
+  } catch (err) {
+    console.error('Failed to load translation cache:', err);
+    translationCache = {};
+  }
+}
+
+// Save cache to storage (debounced)
+const saveCache = debounce(async () => {
+  try {
+    await browser.storage.local.set({ translationCache });
+  } catch (err) {
+    console.error('Failed to save translation cache:', err);
+  }
+}, 1000);
+
+// Debounce helper
+function debounce(fn, ms) {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fn(...args), ms);
+  };
+}
 
 browser.runtime.onMessage.addListener(async (request, sender) => {
   if (request.type === "PARTIAL_TRANSLATE") {
     const { originalText, knownWords } = request.payload;
 
-    // 1) Build a cache key (hash of text + knownWords)
-    const cacheKey = makeHash(`${originalText}_${JSON.stringify(knownWords)}`);
-    if (translationCache[cacheKey]) {
-      return Promise.resolve({ translatedText: translationCache[cacheKey] });
+    // Filter to relevant words first, using word boundaries
+    const relevantWords = knownWords.filter(word => {
+      const wordRegex = new RegExp(`\\b${word.en}\\b`, 'i');
+      return wordRegex.test(originalText);
+    });
+
+    // Create cache key using only relevant words
+    const cacheKey = makeHash(
+      originalText + 
+      relevantWords
+        .map(w => `${w.en}:${w.useKanji ? w.native : w.ruby}`)
+        .sort()
+        .join(',')
+    );
+
+    // Check cache and expiry
+    const cached = translationCache[cacheKey];
+    if (cached && Date.now() - cached.timestamp < CACHE_EXPIRY_MS) {
+      return Promise.resolve({ translatedText: cached.text });
     }
 
     try {
-      // 2) Retrieve user’s stored API key
-      const storageData = await browser.storage.local.get("openAiApiKey");
-      const apiKey = storageData.openAiApiKey;
+      // 2) Retrieve user's stored API key
+      const storageData = await browser.storage.local.get("openaiApiKey");
+      const apiKey = storageData.openaiApiKey;
       if (!apiKey) {
         // No key => return original text (fallback)
         console.warn("No OpenAI API key found in storage.");
         return { translatedText: originalText };
       }
 
-      // 3) Call LLM
+      // 3) Call LLM with already filtered words
       const translated = await callOpenAiPartialTranslate(
         originalText,
-        knownWords,
+        relevantWords,
         apiKey
       );
 
-      // 4) Save to cache
-      translationCache[cacheKey] = translated;
+      // 4) Save to cache with timestamp
+      const now = Date.now();
+      translationCache[cacheKey] = {
+        text: translated,
+        timestamp: now
+      };
+
+      // If cache is too large, remove oldest entries
+      const entries = Object.entries(translationCache);
+      if (entries.length > CACHE_MAX_SIZE) {
+        const sortedEntries = entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
+        translationCache = sortedEntries
+          .slice(0, CACHE_MAX_SIZE)
+          .reduce((acc, [key, value]) => {
+            acc[key] = value;
+            return acc;
+          }, {});
+      }
+
+      saveCache();
 
       // 5) Return to content script
       return { translatedText: translated };
@@ -42,13 +130,16 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
   }
 });
 
+// Initialize cache on extension load
+loadCache();
+
 /**
  * Call OpenAI's GPT-3.5 to do partial translation:
  * - only replace words found in `knownWords`.
  * - preserve all other text as-is.
  */
-async function callOpenAiPartialTranslate(originalText, knownWords, apiKey) {
-  const prompt = buildPartialTranslationPrompt(originalText, knownWords);
+async function callOpenAiPartialTranslate(originalText, relevantWords, apiKey) {
+  const prompt = buildPartialTranslationPrompt(originalText, relevantWords);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -84,25 +175,46 @@ async function callOpenAiPartialTranslate(originalText, knownWords, apiKey) {
  * Builds a prompt instructing the LLM to replace only the specified words,
  * preserving everything else exactly.
  */
-function buildPartialTranslationPrompt(text, knownWords) {
-  // knownWords example:
-  // [
-  //   { en: "I", jpHiragana: "わたし", jpKanji: "私", useKanji: false },
-  //   ...
-  // ]
-  return `
-The user wants to partially translate the following English text to Japanese:
-"${text}"
+function buildPartialTranslationPrompt(text, relevantWords) {
+  // Create word list with word boundaries marked
+  const wordList = relevantWords.map(word => 
+    `${word.en} -> ${word.useKanji ? word.native : word.ruby}`
+  ).join('\n');
 
-Known words (in JSON) that should be replaced:
-${JSON.stringify(knownWords)}
+  return `Translate this text by replacing ONLY the specified English words with their Japanese equivalents: "${text}"
+
+Words to replace (ONLY these exact words should be translated):
+${wordList}
 
 Rules:
-1. Only replace the exact English words listed in 'knownWords'.
-2. If "useKanji" is true, use 'jpKanji'. Otherwise, use 'jpHiragana'.
-3. Preserve all other English words exactly.
-4. Output only the final partially translated text, no additional explanation.
-`;
+1. ONLY replace words that exactly match the list above when they appear as standalone words
+2. Keep ALL other words in English - never output "undefined" or leave words blank
+3. Preserve ALL spaces exactly as they appear in the original text:
+   - Keep a space before and after each translated word
+   - Example: "at school" -> "at がっこう" (not "atがっこう" or "at　がっこう")
+4. Do not translate a word if it's:
+   - Part of another word (e.g. "time" in "sometimes")
+   - Part of a compound (e.g. "time" in "timeline")
+   - After articles like "the" or "a" unless explicitly listed
+5. Keep all punctuation and formatting exactly as in the original
+6. If unsure whether to translate a word, keep it in English
+
+Examples:
+Text: "I go to school sometimes in the afternoon. The time is 2pm."
+Words:
+I -> わたし
+school -> がっこう
+afternoon -> ごご
+
+Should output: "わたし go to がっこう sometimes in the ごご. The time is 2pm."
+(Note: kept "time" in English because it's not in our word list)
+
+Text: "The time between times is timeline"
+Words:
+time -> じかん
+
+Should output: "The time between times is timeline"
+(Note: kept all instances of "time" in English because they're either after "the" or part of other words)`;
 }
 
 /**
