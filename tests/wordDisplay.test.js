@@ -1,4 +1,4 @@
-import { getDisplayText, formatTooltip } from '../src/lib/wordDisplay';
+import { getDisplayText, formatTooltip } from '../src/lib/wordDisplay.js';
 
 describe('getDisplayText', () => {
     test('returns native text when useKanji is true', () => {

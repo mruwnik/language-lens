@@ -465,51 +465,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderWords();
 });
 
-function renderWord(english, word) {
-    const div = document.createElement('div');
-    div.className = 'word-item';
-    
-    const englishDiv = document.createElement('div');
-    englishDiv.textContent = english;
-    
-    const hiraganaDiv = document.createElement('div');
-    hiraganaDiv.textContent = word.hiragana || word.native || '';
-    
-    const kanjiDiv = document.createElement('div');
-    kanjiDiv.textContent = word.kanji || '';
-    
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'delete-btn';
-    deleteBtn.textContent = '×';
-    deleteBtn.onclick = () => deleteWord(english);
-    
-    const speakBtn = document.createElement('button');
-    speakBtn.className = 'speak-btn';
-    speakBtn.innerHTML = '🔊';
-    speakBtn.onclick = () => {
-        const currentLang = document.getElementById('targetLang').value;
-        const dictionaries = {
-            ja: japaneseDictionary,
-            zh: chineseDictionary,
-            ko: koreanDictionary,
-            es: spanishDictionary,
-            fr: frenchDictionary,
-            de: germanDictionary,
-            pl: polishDictionary,
-            cy: welshDictionary
-        };
-        const dict = dictionaries[currentLang];
-        speakWord(word.native || word.hiragana, dict.settings.voice);
-    };
-    
-    div.appendChild(englishDiv);
-    div.appendChild(hiraganaDiv);
-    div.appendChild(kanjiDiv);
-    div.appendChild(deleteBtn);
-    div.appendChild(speakBtn);
-    
-    return div;
-}
 
 // Initialize voices when they're loaded
 window.speechSynthesis.onvoiceschanged = () => {

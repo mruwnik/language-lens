@@ -1,5 +1,4 @@
-import 'regenerator-runtime/runtime';
-import '@testing-library/jest-dom';
+import { jest } from '@jest/globals';
 
 // Mock browser API with proper storage implementation
 const browserStore = {};

@@ -29,7 +29,7 @@ language-learning-plugin/
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
+- Node.js (v18.13.0 or higher)
 - npm or yarn
 
 ### Setup
@@ -84,8 +84,8 @@ npm test
 
 ## Browser Support
 
-- Chrome/Chromium (primary target)
-- Firefox (planned)
+- Firefox (primary target)
+- Chrome/Chromium (supported)
 
 ## License
 

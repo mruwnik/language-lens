@@ -19,5 +19,9 @@ module.exports = {
         '!src/lib/defaultDictionaries.js'
     ],
     verbose: true,
-    testTimeout: 10000
+    testTimeout: 10000,
+    moduleFileExtensions: ['js', 'json', 'node'],
+    transformIgnorePatterns: [
+        'node_modules/(?!(@testing-library|@babel|regenerator-runtime)/)'
+    ]
 }; 

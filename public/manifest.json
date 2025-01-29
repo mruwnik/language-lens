@@ -13,12 +13,11 @@
       "48": "icons/icon48.png"
     },
   
-    // The background script
     "background": {
-      "scripts": ["background.js"]
+      "scripts": ["background.js"],
+      "type": "module"
     },
   
-    // Content script that runs on every page (for demo)
     "content_scripts": [
       {
         "matches": ["<all_urls>"],
@@ -27,7 +26,6 @@
       }
     ],
   
-    // Permissions
     "permissions": [
       "storage",
       "activeTab",
@@ -35,7 +33,7 @@
     ],
   
     "content_security_policy": {
-      "extension_pages": "script-src 'self' 'unsafe-eval'; object-src 'self'"
+      "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'"
     },
   
     "web_accessible_resources": [
