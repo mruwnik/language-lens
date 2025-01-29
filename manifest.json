@@ -1,0 +1,46 @@
+{
+    "manifest_version": 2,
+    "name": "Partial Translation Demo (Firefox)",
+    "version": "0.1",
+    "description": "An example extension that partially translates text using an LLM API.",
+    
+    // You can set a custom ID if you want to install permanently;
+    // otherwise "temporary" installs won't require it.
+    "applications": {
+      "gecko": {
+        "id": "partial-translation-demo@example.com"
+      }
+    },
+  
+    "icons": {
+      "48": "icons/icon48.png"
+    },
+  
+    // 'browser_action' is the Manifest V2 key for the popup
+    "browser_action": {
+      "default_popup": "popup.html",
+      "default_title": "Partial Translation Demo"
+    },
+  
+    // The background script
+    "background": {
+      "scripts": ["background.js"]
+    },
+  
+    // Content script that runs on every page (for demo)
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["contentScript.js"],
+        "run_at": "document_end"
+      }
+    ],
+  
+    // Permissions
+    "permissions": [
+      "storage",
+      "*://api.openai.com/*"
+      // or similar if you need webRequest, etc.
+    ]
+  }
+  

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Partial Translation Settings</title>
+  <style>
+    body {
+      width: 400px;
+      padding: 16px;
+      font-family: system-ui, -apple-system, sans-serif;
+      color: #333;
+    }
+    .section {
+      margin-bottom: 24px;
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .word-list {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #eee;
+      border-radius: 4px;
+      margin-top: 12px;
+    }
+    .word-item {
+      display: grid;
+      grid-template-columns: minmax(80px, 1fr) minmax(120px, 1.5fr) 40px 30px 30px;
+      gap: 12px;
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+      align-items: center;
+      font-size: 14px;
+    }
+    .word-item:last-child {
+      border-bottom: none;
+    }
+    .word-item:hover {
+      background: #f8f9fa;
+    }
+    .word-header {
+      font-weight: 500;
+      color: #666;
+      padding: 8px 12px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #eee;
+    }
+    button {
+      padding: 6px 12px;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: #fff;
+      border-radius: 4px;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #f8f9fa;
+      border-color: #ccc;
+    }
+    .delete-btn {
+      color: #dc3545;
+      border-color: #dc3545;
+    }
+    .delete-btn:hover {
+      background: #dc3545;
+      color: white;
+      border-color: #dc3545;
+    }
+    .api-section {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+    h2 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      color: #2c3e50;
+    }
+    input[type="text"], input[type="password"] {
+      padding: 6px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    input[type="text"]:focus, input[type="password"]:focus {
+      outline: none;
+      border-color: #80bdff;
+      box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+    }
+    .add-word-form {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+    #addWord {
+      background: #007bff;
+      color: white;
+      border: none;
+    }
+    #addWord:hover {
+      background: #0056b3;
+    }
+    #saveKey {
+      background: #28a745;
+      color: white;
+      border: none;
+    }
+    #saveKey:hover {
+      background: #218838;
+    }
+    .undo-container {
+      margin-bottom: 12px;
+    }
+    .undo-message {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #f8f9fa;
+      border: 1px solid #eee;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      font-size: 14px;
+      animation: slideIn 0.2s ease-out;
+    }
+    .undo-message:last-child {
+      margin-bottom: 0;
+    }
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .undo-btn {
+      background: transparent;
+      color: #007bff;
+      border: none;
+      padding: 4px 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .undo-btn:hover {
+      text-decoration: underline;
+      background: transparent;
+    }
+    .lang-section {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+    .lang-select {
+      padding: 6px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .lang-select option {
+      padding: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .lang-select option:hover {
+      background-color: #f8f9fa;
+    }
+    .speak-btn {
+      background: none;
+      border: none;
+      padding: 4px;
+      cursor: pointer;
+      color: #666;
+      font-size: 16px;
+    }
+    .speak-btn:hover {
+      color: #007bff;
+    }
+    .speak-btn:disabled {
+      color: #ccc;
+      cursor: not-allowed;
+    }
+    ruby {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.2;
+    }
+    rt {
+      font-size: 0.6em;
+      color: #666;
+      text-align: center;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="section api-section">
+    <div>
+      <h2>OpenAI API Key</h2>
+      <input type="password" id="apiKey" placeholder="sk-..." style="width: 100%" />
+    </div>
+    <button id="saveKey">Save Key</button>
+  </div>
+
+  <div class="section lang-section">
+    <h2>Target Language</h2>
+    <select id="targetLang" class="lang-select">
+      <option value="ja">🇯🇵 Japanese (日本語)</option>
+      <option value="zh">🇨🇳 Chinese (中文)</option>
+      <option value="ko">🇰🇷 Korean (한국어)</option>
+      <option value="es">🇪🇸 Spanish (Español)</option>
+      <option value="fr">🇫🇷 French (Français)</option>
+      <option value="de">🇩🇪 German (Deutsch)</option>
+      <option value="pl">🇵🇱 Polish (Polski)</option>
+      <option value="cy">🏴󠁧󠁢󠁷󠁬󠁳󠁿 Welsh (Cymraeg)</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <h2>Known Words</h2>
+    <div class="word-list">
+      <div class="word-item word-header">
+        <div>English</div>
+        <div>Hiragana</div>
+        <div>Kanji</div>
+        <div></div>
+      </div>
+      <div id="wordList">
+        <!-- Words will be inserted here -->
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Add New Word</h2>
+    <div class="add-word-form">
+      <input type="text" id="newEnglish" placeholder="English" />
+      <input type="text" id="newHiragana" placeholder="Hiragana" />
+      <input type="text" id="newKanji" placeholder="Kanji" />
+      <button id="addWord">Add</button>
+    </div>
+  </div>
+
+  <script src="defaultDictionaries.js" type="module"></script>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
