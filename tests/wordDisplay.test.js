@@ -1,63 +1,61 @@
 import { getDisplayText, formatTooltip } from '../src/lib/wordDisplay.js';
 
 describe('getDisplayText', () => {
-    test('returns native text when useKanji is true', () => {
-        const wordData = {
-            native: '漢字',
-            ruby: 'かんじ',
-            useKanji: true
-        };
-        expect(getDisplayText(wordData)).toBe('漢字');
-    });
-
-    test('returns ruby when no kanji should be shown', () => {
-        const wordData = {
-            native: '漢字',
-            ruby: 'かんじ',
-            useKanji: false
-        };
-        expect(getDisplayText(wordData)).toBe('<ruby>漢字<rt>かんじ</rt></ruby>');
-    });
-
-    test('returns native text when no ruby exists', () => {
-        const wordData = {
-            native: '漢字',
-            useKanji: false
-        };
-        expect(getDisplayText(wordData)).toBe('漢字');
-    });
-
-    test('returns ruby text when kanji display is disabled globally and useKanji is false', () => {
-        const wordData = {
-            native: '漢字',
-            ruby: 'かんじ',
-            useKanji: false
-        };
-        const settings = {
-            showKanji: false
-        };
-        expect(getDisplayText(wordData, settings)).toBe('かんじ');
-    });
+    test.each([
+        [
+            { native: '漢字', ruby: 'かんじ', useKanji: true },
+            undefined,
+            '漢字'
+        ],
+        [
+            { native: '漢字', ruby: 'かんじ', useKanji: false },
+            undefined,
+            '<ruby>漢字<rt>かんじ</rt></ruby>'
+        ],
+        [
+            { native: '漢字', useKanji: false },
+            undefined,
+            '漢字'
+        ],
+        [
+            { native: '漢字', ruby: 'かんじ', useKanji: false },
+            { showKanji: false },
+            'かんじ'
+        ],
+        [
+            { native: 'hello', ruby: undefined, useKanji: false },
+            undefined,
+            'hello'
+        ]
+    ])('getDisplayText(%p, %p) => %p', (wordData, settings, expected) =>
+        expect(getDisplayText(wordData, settings)).toBe(expected));
 });
 
 describe('formatTooltip', () => {
-    test('returns kanji frequency for Japanese words', () => {
-        const wordData = {
-            native: '漢字',
-            useKanji: true,
-            kanjiViewCounts: {
-                '漢': 5,
-                '字': 3
-            }
-        };
-        const expected = '漢: seen 5 times\n字: seen 3 times';
-        expect(formatTooltip(wordData, 'ja')).toBe(expected);
-    });
-
-    test('returns native text for non-Japanese words', () => {
-        const wordData = {
-            native: 'hola'
-        };
-        expect(formatTooltip(wordData, 'es')).toBe('hola');
-    });
+    test.each([
+        [
+            { 
+                native: '漢字',
+                useKanji: true,
+                kanjiViewCounts: { '漢': 5, '字': 3 }
+            },
+            'ja',
+            '漢: seen 5 times\n字: seen 3 times'
+        ],
+        [
+            { native: 'hola' },
+            'es',
+            'hola'
+        ],
+        [
+            { 
+                native: '漢字',
+                useKanji: true,
+                kanjiViewCounts: {}
+            },
+            'ja',
+            '漢字'
+        ]
+    ])('formatTooltip(%p, %p) => %p', (wordData, lang, expected) =>
+        expect(formatTooltip(wordData, lang)).toBe(expected));
 }); 

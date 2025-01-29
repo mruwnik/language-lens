@@ -9,464 +9,389 @@ import {
     frenchDictionary,
     germanDictionary,
     polishDictionary,
-    welshDictionary
+    welshDictionary,
+    defaultDictionaries
 } from '../lib/defaultDictionaries.js';
 
 console.log('Starting popup.js');
-console.log('Checking dictionaries:', {
-    ja: !!japaneseDictionary,
-    zh: !!chineseDictionary,
-    ko: !!koreanDictionary,
-    es: !!spanishDictionary,
-    fr: !!frenchDictionary,
-    de: !!germanDictionary,
-    pl: !!polishDictionary,
-    cy: !!welshDictionary
+
+// Constants and Types
+export const MESSAGES = {
+    REQUIRED_FIELDS: "English and translation are required!",
+    WORD_EXISTS: "This word already exists!",
+    API_KEY_REQUIRED: "Please enter your OpenAI API key (sk-...)",
+    API_KEY_SAVED: "API key saved!",
+    API_KEY_ERROR: "Error saving API key. Please try again."
+};
+
+const KANJI_REGEX = /[\u4e00-\u9faf]/;
+const UNDO_TIMEOUT_MS = 5000;
+
+// Pure functions
+export const getKanjiViewCounts = (text) => 
+    !text ? {} : [...text].reduce((counts, char) => {
+        if (char.match(KANJI_REGEX)) {
+            counts[char] = 0;
+        }
+        return counts;
+    }, {});
+
+export const createWord = (currentLang, native, ruby) => ({ 
+    native,
+    ruby,
+    viewCount: 0
 });
 
-document.addEventListener("DOMContentLoaded", async () => {
-    console.log('DOM Content Loaded');
+export const validateNewWord = (en, translation, currentLangData) => {
+    if (!en || !translation) {
+        alert(MESSAGES.REQUIRED_FIELDS);
+        return false;
+    }
+
+    if (currentLangData.words[en]) {
+        alert(MESSAGES.WORD_EXISTS);
+        return false;
+    }
+
+    return true;
+};
+
+export const clearInputs = (...inputs) => inputs.forEach(input => input.value = '');
+
+// Storage functions
+export const loadLanguageData = async (lang) => {
+    const data = await browser.storage.local.get(lang);
     
-    const apiKeyInput = document.getElementById("apiKey");
-    console.log('API Key Input found:', !!apiKeyInput, apiKeyInput);
-    
-    const saveKeyBtn = document.getElementById("saveKey");
-    const wordList = document.getElementById("wordList");
-    const newEnglish = document.getElementById("newEnglish");
-    const newHiragana = document.getElementById("newHiragana");
-    const newKanji = document.getElementById("newKanji");
-    const addWordBtn = document.getElementById("addWord");
-    const langSelect = document.getElementById("targetLang");
-    const wordSearch = document.getElementById("wordSearch");
+    if (!data[lang]) {
+        const defaultDict = defaultDictionaries[lang];
+        if (defaultDict) {
+            return JSON.parse(JSON.stringify(defaultDict));
+        }
+        return { words: {}, settings: {} };
+    }
 
-    console.log('Elements found:', {
-        apiKeyInput: !!apiKeyInput,
-        saveKeyBtn: !!saveKeyBtn,
-        wordList: !!wordList,
-        newEnglish: !!newEnglish,
-        newHiragana: !!newHiragana,
-        newKanji: !!newKanji,
-        addWordBtn: !!addWordBtn,
-        langSelect: !!langSelect,
-        wordSearch: !!wordSearch
-    });
+    return data[lang];
+};
 
-    // Track deleted words for undo
-    const deletedWords = [];
-    const undoTimeouts = new Map(); // Map of messageId -> timeout
+export const addWord = async (currentLang, currentLangData, word, translation, ruby) => {
+    if (!validateNewWord(word, translation, currentLangData)) {
+        return false;
+    }
 
-    // Default dictionaries map
-    const defaultDictionaries = {
-        ja: japaneseDictionary,
-        zh: chineseDictionary,
-        ko: koreanDictionary,
-        es: spanishDictionary,
-        fr: frenchDictionary,
-        de: germanDictionary,
-        pl: polishDictionary,
-        cy: welshDictionary
+    const updatedData = {
+        ...currentLangData,
+        words: {
+            ...currentLangData.words,
+            [word]: createWord(currentLang, translation, ruby)
+        }
     };
-    console.log('Default dictionaries:', {
-        hasJa: !!defaultDictionaries.ja?.words,
-        jaWords: Object.keys(defaultDictionaries.ja?.words || {}).length,
-        allLangs: Object.keys(defaultDictionaries)
+
+    await browser.storage.local.set({ [currentLang]: updatedData });
+    return true;
+};
+
+// DOM manipulation functions
+export const updateHeader = (currentLang, currentLangData, wordList) => {
+    const header = document.querySelector('.word-item.word-header');
+    if (!header) return;
+
+    const hasKanji = currentLang === 'ja';
+    
+    header.innerHTML = `
+        <div>English</div>
+        <div>${hasKanji ? 'Reading' : 'Translation'}</div>
+        ${hasKanji ? '<div>Use Kanji</div>' : '<div></div>'}
+        <div></div>
+        <div></div>
+    `;
+
+    if (hasKanji) {
+        const toggle = document.createElement('button');
+        toggle.className = 'kanji-toggle';
+        toggle.title = 'Toggle Global Kanji Display';
+        toggle.textContent = '漢字';
+        toggle.classList.toggle('active', currentLangData.settings?.showKanji ?? true);
+        
+        header.children[1].appendChild(toggle);
+
+        toggle.addEventListener('click', async () => {
+            const updatedData = {
+                ...currentLangData,
+                settings: {
+                    ...currentLangData.settings,
+                    showKanji: !currentLangData.settings?.showKanji
+                }
+            };
+            toggle.classList.toggle('active', updatedData.settings.showKanji);
+            await browser.storage.local.set({ [currentLang]: updatedData });
+            renderWords(currentLang, updatedData);
+        });
+    }
+};
+
+export const wordMatchesSearch = (english, wordData, searchTerm) => {
+    if (!searchTerm) return true;
+    
+    const searchIn = [
+        english.toLowerCase(),
+        (wordData.hiragana || '').toLowerCase(),
+        (wordData.ruby || '').toLowerCase(),
+        (wordData.native || '').toLowerCase(),
+        (wordData.kanji || '').toLowerCase()
+    ];
+    
+    return searchIn.some(text => text.includes(searchTerm.toLowerCase()));
+};
+
+export const createUndoContainer = (wordList) => {
+    const container = document.createElement('div');
+    container.className = 'undo-container';
+    wordList.parentNode.insertBefore(container, wordList);
+    return container;
+};
+
+export const showUndoMessage = (wordKey, wordData, messageId, currentLang, currentLangData, deletedWords, undoTimeouts) => {
+    const wordList = document.getElementById('wordList');
+    const undoMsg = document.createElement('div');
+    undoMsg.className = 'undo-message';
+    undoMsg.dataset.messageId = messageId;
+    undoMsg.innerHTML = `
+        <span>"${wordKey}" deleted</span>
+        <button class="undo-btn">Undo</button>
+    `;
+    
+    const undoBtn = undoMsg.querySelector('.undo-btn');
+    undoBtn.addEventListener('click', async () => {
+        const idx = deletedWords.findIndex(dw => dw.messageId === messageId);
+        if (idx !== -1) {
+            const { key, data, language } = deletedWords[idx];
+            const updatedData = {
+                ...currentLangData,
+                words: {
+                    ...currentLangData.words,
+                    [key]: data
+                }
+            };
+            await browser.storage.local.set({ [language]: updatedData });
+            deletedWords[idx].undone = true;
+            undoMsg.remove();
+            clearTimeout(undoTimeouts.get(messageId));
+            undoTimeouts.delete(messageId);
+            
+            const container = document.querySelector('.undo-container');
+            if (container?.children.length === 0) {
+                container.remove();
+            }
+            
+            renderWords(currentLang, updatedData);
+        }
     });
+
+    const undoContainer = document.querySelector('.undo-container') || createUndoContainer(wordList);
+    undoContainer.insertBefore(undoMsg, undoContainer.firstChild);
+
+    const timeout = setTimeout(() => {
+        undoMsg.remove();
+        const idx = deletedWords.findIndex(dw => dw.messageId === messageId);
+        if (idx !== -1 && !deletedWords[idx].undone) {
+            deletedWords.splice(idx, 1);
+        }
+        undoTimeouts.delete(messageId);
+        if (undoContainer.children.length === 0) {
+            undoContainer.remove();
+        }
+    }, UNDO_TIMEOUT_MS);
+    
+    undoTimeouts.set(messageId, timeout);
+};
+
+export const renderWords = (currentLang, currentLangData, searchTerm = '') => {
+    const wordList = document.getElementById('wordList');
+    if (!wordList) return;
+
+    const sortedWords = Object.entries(currentLangData.words)
+        .filter(([english, data]) => wordMatchesSearch(english, data, searchTerm))
+        .sort((a, b) => a[0].localeCompare(b[0]));
+
+    updateHeader(currentLang, currentLangData, wordList);
+    
+    const showKanji = currentLangData.settings?.showKanji ?? true;
+    wordList.innerHTML = sortedWords.map(([key, data]) => {
+        const displayText = getDisplayText(data, currentLangData.settings);
+        const useKanji = currentLang === 'ja' && data.ruby;
+        const useKanjiClass = data.useKanji ? 'active' : '';
+        
+        return `
+            <div class="word-item">
+                <div title="${key}">${key}</div>
+                <div title="${formatTooltip(data, currentLangData.settings)}">${displayText}</div>
+                ${useKanji ? 
+                    `<button class="kanji-toggle ${useKanjiClass}" data-word="${key}" title="Toggle Kanji for this word">
+                        ${data.useKanji ? '✓' : '✗'}
+                    </button>` : 
+                    '<div></div>'
+                }
+                <button class="delete-btn" data-word="${key}">×</button>
+                <button class="speak-btn" data-word="${key}">🔊</button>
+            </div>
+        `;
+    }).join('');
+
+    // Add event listeners
+    const deletedWords = [];
+    const undoTimeouts = new Map();
+
+    wordList.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const wordKey = e.target.dataset.word;
+            const wordData = currentLangData.words[wordKey];
+            const messageId = Date.now().toString();
+            
+            deletedWords.push({ 
+                key: wordKey, 
+                data: wordData, 
+                language: currentLang,
+                messageId, 
+                undone: false 
+            });
+            
+            const updatedData = {
+                ...currentLangData,
+                words: { ...currentLangData.words }
+            };
+            delete updatedData.words[wordKey];
+            
+            await browser.storage.local.set({ [currentLang]: updatedData });
+            renderWords(currentLang, updatedData, searchTerm);
+            
+            showUndoMessage(wordKey, wordData, messageId, currentLang, updatedData, deletedWords, undoTimeouts);
+        });
+    });
+
+    wordList.querySelectorAll('.kanji-toggle').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const wordKey = e.target.dataset.word;
+            const updatedData = {
+                ...currentLangData,
+                words: {
+                    ...currentLangData.words,
+                    [wordKey]: {
+                        ...currentLangData.words[wordKey],
+                        useKanji: !currentLangData.words[wordKey].useKanji
+                    }
+                }
+            };
+            await browser.storage.local.set({ [currentLang]: updatedData });
+            renderWords(currentLang, updatedData, searchTerm);
+        });
+    });
+
+    wordList.querySelectorAll('.speak-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const wordKey = btn.dataset.word;
+            const wordData = currentLangData.words[wordKey];
+            speakWord(wordData.native || wordData.hiragana, currentLangData.settings.voice);
+        });
+    });
+};
+
+// Event handlers
+export const handleAddWord = async (currentLang, currentLangData, inputs) => {
+    const { newEnglish, newTranslation, newFurigana } = inputs;
+    const en = newEnglish.value.trim();
+    const translation = newTranslation.value.trim();
+    const nativeScript = newFurigana.value.trim();
+
+    const success = await addWord(currentLang, currentLangData, en, translation, nativeScript);
+    if (success) {
+        clearInputs(newEnglish, newTranslation, newFurigana);
+        // Load fresh data after adding the word
+        const updatedData = await loadLanguageData(currentLang);
+        renderWords(currentLang, updatedData);
+    }
+};
+
+export const updateFormPlaceholders = (currentLang, newTranslation, newFurigana) => {
+    const isJapanese = currentLang === "ja";
+    newTranslation.placeholder = "Translation";
+    newFurigana.placeholder = "Furigana";
+    
+    newFurigana.style.display = isJapanese ? "block" : "none";
+    
+    const form = document.querySelector('.add-word-form');
+    form.style.gridTemplateColumns = isJapanese ? "repeat(4, 1fr)" : "repeat(3, 1fr)";
+};
+
+// Main setup
+document.addEventListener("DOMContentLoaded", async () => {
+    const elements = {
+        apiKeyInput: document.getElementById("apiKey"),
+        saveKeyBtn: document.getElementById("saveKey"),
+        wordList: document.getElementById("wordList"),
+        newEnglish: document.getElementById("newEnglish"),
+        newTranslation: document.getElementById("newTranslation"),
+        newFurigana: document.getElementById("newFurigana"),
+        addWordBtn: document.getElementById("addWord"),
+        langSelect: document.getElementById("targetLang"),
+        wordSearch: document.getElementById("wordSearch")
+    };
 
     // Load existing data
     const data = await browser.storage.local.get(["openaiApiKey", "lastLanguage"]);
-    console.log('Loaded storage data:', {
-        hasApiKey: !!data.openaiApiKey,
-        apiKeyValue: data.openaiApiKey,
-        lastLanguage: data.lastLanguage
-    });
-
-    if (data.openaiApiKey && apiKeyInput) {
-        console.log('Setting API key input value:', data.openaiApiKey);
-        apiKeyInput.value = data.openaiApiKey;
-        console.log('API key input value after setting:', apiKeyInput.value);
+    
+    if (data.openaiApiKey && elements.apiKeyInput) {
+        elements.apiKeyInput.value = data.openaiApiKey;
     }
 
     // Set current language (default to Japanese if not set)
     let currentLang = data.lastLanguage || "ja";
-    langSelect.value = currentLang;
-    console.log('Set initial language to:', currentLang);
+    elements.langSelect.value = currentLang;
 
     // Initialize or load current language data
     let currentLangData = await loadLanguageData(currentLang);
 
-    // Load language data
-    async function loadLanguageData(lang) {
-        console.log('Loading language data for:', lang);
-        const storedData = await browser.storage.local.get(lang);
-        console.log('Stored data:', storedData);
-        
-        // If no stored data or empty words, initialize with defaults
-        if (!storedData[lang] || Object.keys(storedData[lang]?.words || {}).length === 0) {
-            console.log('No stored data found, initializing defaults');
-            const defaultDict = defaultDictionaries[lang];
-            console.log('Default dictionary found:', !!defaultDict, 'with words:', Object.keys(defaultDict?.words || {}).length);
-            
-            if (!defaultDict) {
-                console.error('No default dictionary found for', lang);
-                return { words: {}, settings: {} };
-            }
-
-            // Deep clone the default dictionary
-            const defaultData = JSON.parse(JSON.stringify(defaultDict));
-            console.log('Cloned default data with words:', Object.keys(defaultData.words).length);
-            
-            // Initialize view counts and kanji counts
-            Object.values(defaultData.words).forEach(word => {
-                word.viewCount = 0;
-                if (lang === 'ja' && word.useKanji) {
-                    word.kanjiViewCounts = {};
-                    [...word.native].forEach(char => {
-                        if (char.match(/[\u4e00-\u9faf]/)) {
-                            word.kanjiViewCounts[char] = 0;
-                        }
-                    });
-                }
-            });
-
-            // Save to storage
-            try {
-                await browser.storage.local.set({ [lang]: defaultData });
-                console.log('Saved default dictionary with words:', Object.keys(defaultData.words).length);
-            } catch (error) {
-                console.error('Error saving dictionary:', error);
-            }
-            return defaultData;
-        }
-
-        console.log('Returning stored data with words:', Object.keys(storedData[lang].words).length);
-        return storedData[lang];
-    }
-
     // Language change handler
-    langSelect.addEventListener("change", async () => {
-        const newLang = langSelect.value.trim().toLowerCase();
-        console.log('Language changed to:', newLang);
-        
-        // Save last language first
+    elements.langSelect.addEventListener("change", async () => {
+        const newLang = elements.langSelect.value.trim().toLowerCase();
         await browser.storage.local.set({ lastLanguage: newLang });
-        
-        // Load new language data
         currentLang = newLang;
         currentLangData = await loadLanguageData(currentLang);
-        
-        console.log('Loaded language data:', currentLangData);
-        
-        updateFormPlaceholders();
-        renderWords();
+        updateFormPlaceholders(currentLang, elements.newTranslation, elements.newFurigana);
+        renderWords(currentLang, currentLangData);
     });
-
-    // Update form placeholders based on language
-    function updateFormPlaceholders() {
-        const isJapanese = currentLang === "ja";
-        newHiragana.placeholder = isJapanese ? "Hiragana" : "Pronunciation";
-        newKanji.placeholder = isJapanese ? "Kanji" : "Native Script";
-        
-        // Show/hide kanji input based on language
-        newKanji.style.display = isJapanese ? "block" : "none";
-        
-        // Adjust grid columns based on visible inputs
-        const form = document.querySelector('.add-word-form');
-        form.style.gridTemplateColumns = isJapanese ? "repeat(4, 1fr)" : "repeat(3, 1fr)";
-    }
 
     // Save API key
-    saveKeyBtn.addEventListener("click", async () => {
-        const key = apiKeyInput.value.trim();
+    elements.saveKeyBtn.addEventListener("click", async () => {
+        const key = elements.apiKeyInput.value.trim();
         if (!key) {
-            alert("Please enter your OpenAI API key (sk-...).");
+            alert(MESSAGES.API_KEY_REQUIRED);
             return;
         }
         try {
-            console.log('Saving API key...');
             await browser.storage.local.set({ openaiApiKey: key });
-            console.log('API key saved successfully');
-            alert("API key saved!");
+            alert(MESSAGES.API_KEY_SAVED);
         } catch (error) {
             console.error('Error saving API key:', error);
-            alert("Error saving API key. Please try again.");
+            alert(MESSAGES.API_KEY_ERROR);
         }
     });
-
-    // Load API key on startup
-    async function loadApiKey() {
-        try {
-            const { openaiApiKey } = await browser.storage.local.get('openaiApiKey');
-            console.log('Loading API key:', !!openaiApiKey);
-            if (openaiApiKey) {
-                apiKeyInput.value = openaiApiKey;
-            }
-        } catch (error) {
-            console.error('Error loading API key:', error);
-        }
-    }
-
-    // Load API key immediately
-    await loadApiKey();
-
-    // Show undo message
-    function showUndoMessage(wordKey, wordData, messageId) {
-        const undoMsg = document.createElement('div');
-        undoMsg.className = 'undo-message';
-        undoMsg.dataset.messageId = messageId;
-        undoMsg.innerHTML = `
-            <span>"${wordKey}" deleted</span>
-            <button class="undo-btn">Undo</button>
-        `;
-        
-        // Add undo button listener
-        const undoBtn = undoMsg.querySelector('.undo-btn');
-        undoBtn.addEventListener('click', async () => {
-            const idx = deletedWords.findIndex(dw => dw.messageId === messageId);
-            if (idx !== -1) {
-                const { key, data, language } = deletedWords[idx];
-                currentLangData.words[key] = data;
-                await browser.storage.local.set({ [language]: currentLangData });
-                
-                // Mark this deletion as undone
-                deletedWords[idx].undone = true;
-                
-                // Remove just this message
-                undoMsg.remove();
-                clearTimeout(undoTimeouts.get(messageId));
-                undoTimeouts.delete(messageId);
-                
-                // Remove container if empty
-                const container = document.querySelector('.undo-container');
-                if (container && container.children.length === 0) {
-                    container.remove();
-                }
-                
-                renderWords();
-            }
-        });
-
-        // Add to DOM at the top of the undo messages
-        const undoContainer = document.querySelector('.undo-container') || createUndoContainer();
-        undoContainer.insertBefore(undoMsg, undoContainer.firstChild);
-
-        // Auto-remove after 5 seconds
-        const timeout = setTimeout(() => {
-            undoMsg.remove();
-            const idx = deletedWords.findIndex(dw => dw.messageId === messageId);
-            if (idx !== -1 && !deletedWords[idx].undone) {
-                deletedWords.splice(idx, 1);
-            }
-            undoTimeouts.delete(messageId);
-            if (undoContainer.children.length === 0) {
-                undoContainer.remove();
-            }
-        }, 5000);
-        
-        undoTimeouts.set(messageId, timeout);
-    }
-
-    // Create container for undo messages if it doesn't exist
-    function createUndoContainer() {
-        const container = document.createElement('div');
-        container.className = 'undo-container';
-        wordList.parentNode.insertBefore(container, wordList);
-        return container;
-    }
-
-    // Update header based on language
-    function updateHeader() {
-        const header = document.querySelector('.word-item.word-header');
-        const hasKanji = currentLang === 'ja';
-        
-        header.innerHTML = `
-            <div>English</div>
-            <div>${currentLang === 'ja' ? 'Reading' : 'Native'}</div>
-            ${hasKanji ? '<div>Use Kanji</div>' : '<div></div>'}
-            <div></div>
-            <div></div>
-        `;
-
-        if (hasKanji) {
-            const toggle = document.createElement('button');
-            toggle.className = 'kanji-toggle';
-            toggle.title = 'Toggle Global Kanji Display';
-            toggle.textContent = '漢字';
-            toggle.classList.toggle('active', currentLangData.settings?.showKanji ?? true);
-            
-            header.children[1].appendChild(toggle);
-
-            toggle.addEventListener('click', async () => {
-                currentLangData.settings = currentLangData.settings || {};
-                currentLangData.settings.showKanji = !currentLangData.settings.showKanji;
-                toggle.classList.toggle('active', currentLangData.settings.showKanji);
-                await browser.storage.local.set({ [currentLang]: currentLangData });
-                renderWords();
-            });
-        }
-    }
 
     // Add search functionality
-    let searchTerm = '';
-    wordSearch.addEventListener('input', (e) => {
-        searchTerm = e.target.value.toLowerCase();
-        renderWords();
+    elements.wordSearch.addEventListener('input', (e) => {
+        renderWords(currentLang, currentLangData, e.target.value);
     });
-
-    // Helper function to check if a word matches the search
-    function wordMatchesSearch(english, wordData) {
-        if (!searchTerm) return true;
-        
-        const searchIn = [
-            english.toLowerCase(),
-            (wordData.hiragana || '').toLowerCase(),
-            (wordData.ruby || '').toLowerCase(),
-            (wordData.native || '').toLowerCase(),
-            (wordData.kanji || '').toLowerCase()
-        ];
-        
-        return searchIn.some(text => text.includes(searchTerm));
-    }
-
-    // Render word list
-    function renderWords() {
-        console.log('Rendering words for language:', currentLang);
-        console.log('Current language data:', currentLangData);
-        
-        const sortedWords = Object.entries(currentLangData.words)
-            .filter(([english, data]) => wordMatchesSearch(english, data))
-            .sort((a, b) => a[0].localeCompare(b[0]));
-        
-        console.log('Sorted and filtered words:', sortedWords.length);
-
-        // Update header first
-        updateHeader();
-        
-        // Render words
-        const showKanji = currentLangData.settings?.showKanji ?? true;
-        wordList.innerHTML = sortedWords.map(([key, data]) => {
-            const displayText = getDisplayText(data, currentLangData.settings);
-            const useKanji = currentLang === 'ja' && data.ruby;
-            const useKanjiClass = data.useKanji ? 'active' : '';
-            
-            return `
-                <div class="word-item">
-                    <div title="${key}">${key}</div>
-                    <div title="${formatTooltip(data, currentLang)}">${displayText}</div>
-                    ${useKanji ? 
-                        `<button class="kanji-toggle ${useKanjiClass}" data-word="${key}" title="Toggle Kanji for this word">
-                            ${data.useKanji ? '✓' : '✗'}
-                        </button>` : 
-                        '<div></div>'
-                    }
-                    <button class="delete-btn" data-word="${key}">×</button>
-                    <button class="speak-btn" data-word="${key}">🔊</button>
-                </div>
-            `;
-        }).join('');
-        
-        console.log('Rendered HTML, adding event listeners');
-
-        // Add event listeners
-        wordList.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const wordKey = e.target.dataset.word;
-                const wordData = currentLangData.words[wordKey];
-                const messageId = Date.now().toString();
-                
-                deletedWords.push({ 
-                    key: wordKey, 
-                    data: wordData, 
-                    language: currentLang,
-                    messageId, 
-                    undone: false 
-                });
-                
-                delete currentLangData.words[wordKey];
-                await browser.storage.local.set({ [currentLang]: currentLangData });
-                renderWords();
-                
-                showUndoMessage(wordKey, wordData, messageId);
-            });
-        });
-
-        // Add kanji toggle listeners
-        wordList.querySelectorAll('.kanji-toggle').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const wordKey = e.target.dataset.word;
-                const wordData = currentLangData.words[wordKey];
-                wordData.useKanji = !wordData.useKanji;
-                await browser.storage.local.set({ [currentLang]: currentLangData });
-                renderWords();
-            });
-        });
-
-        // Add speak button listeners
-        wordList.querySelectorAll('.speak-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const wordKey = btn.dataset.word;
-                const wordData = currentLangData.words[wordKey];
-                speakWord(wordData.native || wordData.hiragana, currentLangData.settings.voice);
-            });
-        });
-    }
 
     // Add new word
-    addWordBtn.addEventListener("click", async () => {
-        const en = newEnglish.value.trim();
-        const pronunciation = newHiragana.value.trim();
-        const nativeScript = newKanji.value.trim();
-
-        if (!en || !pronunciation) {
-            alert("English and pronunciation are required!");
-            return;
-        }
-
-        if (currentLangData.words[en]) {
-            alert("This word already exists!");
-            return;
-        }
-
-        if (currentLang === "ja") {
-            // Japanese-specific structure
-            const kanjiViewCounts = {};
-            if (nativeScript) {
-                [...nativeScript].forEach(char => {
-                    if (char.match(/[\u4e00-\u9faf]/)) {
-                        kanjiViewCounts[char] = 0;
-                    }
-                });
-            }
-
-            currentLangData.words[en] = {
-                hiragana: pronunciation,
-                kanji: nativeScript,
-                useKanji: !!nativeScript,
-                viewCount: 0,
-                kanjiViewCounts
-            };
-        } else {
-            // Generic structure for other languages
-            currentLangData.words[en] = {
-                pronunciation,
-                native: nativeScript,
-                viewCount: 0
-            };
-        }
-
-        await browser.storage.local.set({ [currentLang]: currentLangData });
-        newEnglish.value = '';
-        newHiragana.value = '';
-        newKanji.value = '';
-        renderWords();
-    });
+    elements.addWordBtn.addEventListener("click", () => 
+        handleAddWord(currentLang, currentLangData, elements)
+    );
 
     // Initial setup
-    updateFormPlaceholders();
-    renderWords();
+    updateFormPlaceholders(currentLang, elements.newTranslation, elements.newFurigana);
+    renderWords(currentLang, currentLangData);
 });
 
-
-// Initialize voices when they're loaded
+// Voice initialization
 window.speechSynthesis.onvoiceschanged = () => {
     console.log('Voices loaded:', window.speechSynthesis.getVoices().length);
 };

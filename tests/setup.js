@@ -1,60 +1,48 @@
 import { jest } from '@jest/globals';
+const { TextEncoder, TextDecoder } = require('util');
 
-// Mock browser API with proper storage implementation
-const browserStore = {};
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;
 
+const { JSDOM } = require('jsdom');
+
+const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
+    url: 'http://localhost',
+    pretendToBeVisual: true,
+    runScripts: 'dangerously'
+});
+
+global.window = dom.window;
+global.document = dom.window.document;
+global.navigator = dom.window.navigator;
+global.HTMLElement = dom.window.HTMLElement;
+global.Element = dom.window.Element;
+global.Node = dom.window.Node;
+global.NodeList = dom.window.NodeList;
+
+// Mock browser API
 global.browser = {
     storage: {
         local: {
-            get: jest.fn((key) => {
-                if (typeof key === 'string') {
-                    return Promise.resolve({ [key]: browserStore[key] });
-                }
-                if (Array.isArray(key)) {
-                    const result = {};
-                    key.forEach(k => {
-                        result[k] = browserStore[k];
-                    });
-                    return Promise.resolve(result);
-                }
-                return Promise.resolve(browserStore);
-            }),
-            set: jest.fn((data) => {
-                Object.assign(browserStore, data);
-                return Promise.resolve();
-            })
-        }
-    },
-    runtime: {
-        onMessage: {
-            addListener: jest.fn()
+            get: jest.fn(),
+            set: jest.fn()
         }
     }
 };
 
-// Mock chrome API as fallback
-global.chrome = global.browser;
+// Mock speech synthesis
+global.speechSynthesis = {
+    speak: jest.fn(),
+    cancel: jest.fn(),
+    getVoices: jest.fn().mockReturnValue([]),
+    onvoiceschanged: null
+};
 
-// Mock window.speechSynthesis
-Object.defineProperty(window, 'speechSynthesis', {
-    value: {
-        getVoices: jest.fn().mockReturnValue([]),
-        speak: jest.fn(),
-        cancel: jest.fn(),
-        onvoiceschanged: null
-    },
-    writable: true
-});
-
-// Mock SpeechSynthesisUtterance
-global.SpeechSynthesisUtterance = jest.fn().mockImplementation((text) => ({
-    voice: null,
-    rate: 1,
-    pitch: 1,
-    volume: 1,
-    text,
-    lang: ''
-}));
+global.SpeechSynthesisUtterance = class {
+    constructor(text) {
+        this.text = text;
+    }
+};
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -84,5 +72,5 @@ global.confirm = jest.fn();
 beforeEach(() => {
     jest.clearAllMocks();
     localStorageMock.clear();
-    Object.keys(browserStore).forEach(key => delete browserStore[key]);
+    document.body.innerHTML = '';
 }); 

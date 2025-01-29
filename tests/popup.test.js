@@ -1,390 +1,540 @@
 import { jest } from '@jest/globals';
-import '../src/popup/popup.js';
 
-describe('Popup Functionality', () => {
-    beforeEach(() => {
-        document.body.innerHTML = `
-            <div class="section api-section">
-                <div>
-                    <h2>OpenAI API Key</h2>
-                    <input type="password" id="apiKey" placeholder="sk-..." />
-                </div>
-                <button id="saveKey">Save Key</button>
-            </div>
+// Mock browser API
+global.browser = {
+    storage: {
+        local: {
+            get: jest.fn(),
+            set: jest.fn().mockResolvedValue()
+        }
+    }
+};
 
-            <div class="section lang-section">
-                <h2>Target Language</h2>
-                <select id="targetLang" class="lang-select">
-                    <option value="ja">Japanese</option>
-                    <option value="zh">Chinese</option>
-                </select>
-            </div>
+// Mock the imported modules
+const mockWordDisplay = {
+    getDisplayText: jest.fn(data => data.native),
+    formatTooltip: jest.fn(data => data.native),
+    speakWord: jest.fn()
+};
 
-            <div class="section">
-                <h2>Known Words</h2>
-                <div class="search-container">
-                    <input type="text" id="wordSearch" placeholder="Search words..." />
-                </div>
-                <div class="word-list">
-                    <div class="word-item word-header">
-                        <div>English</div>
-                        <div>Reading</div>
-                        <div>Use Kanji</div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <div id="wordList"></div>
-                </div>
-            </div>
+jest.mock('../lib/wordDisplay.js', () => mockWordDisplay);
 
-            <div class="section">
-                <h2>Add New Word</h2>
-                <div class="add-word-form">
-                    <input type="text" id="newEnglish" placeholder="English" />
-                    <input type="text" id="newHiragana" placeholder="Hiragana" />
-                    <input type="text" id="newKanji" placeholder="Kanji" />
-                    <button id="addWord">Add</button>
-                </div>
-            </div>
-        `;
-    });
+// Mock window.speechSynthesis
+global.speechSynthesis = {
+    getVoices: jest.fn().mockReturnValue([]),
+    speak: jest.fn(),
+    cancel: jest.fn()
+};
 
-    afterEach(() => {
-        document.body.innerHTML = '';
-    });
+global.SpeechSynthesisUtterance = jest.fn().mockImplementation(() => ({
+    voice: null,
+    lang: '',
+    rate: 1,
+    pitch: 1,
+    volume: 1
+}));
 
-    test('loads default Japanese dictionary when no stored data exists', async () => {
-        // Trigger DOMContentLoaded
-        const event = new Event('DOMContentLoaded');
-        document.dispatchEvent(event);
+// Mock alert
+global.alert = jest.fn();
 
-        // Wait for async operations
-        await new Promise(resolve => setTimeout(resolve, 0));
-
-        // Verify browser.storage.local.get was called
-        expect(browser.storage.local.get).toHaveBeenCalledWith(['openaiApiKey', 'lastLanguage']);
-        
-        // Verify browser.storage.local.get was called with 'ja'
-        expect(browser.storage.local.get).toHaveBeenCalledWith('ja');
-
-        // Verify browser.storage.local.set was called to save default dictionary
-        expect(browser.storage.local.set).toHaveBeenCalled();
-    });
-
-    describe('API Key Management', () => {
-        test('loads API key from storage on startup', async () => {
-            const mockApiKey = 'test-api-key';
-            browser.storage.local.get
-                .mockResolvedValueOnce({ openaiApiKey: mockApiKey })
-                .mockResolvedValueOnce({ lastLanguage: 'ja' })
-                .mockResolvedValueOnce({ ja: { words: {}, settings: {} } });
-            
-            // Trigger DOMContentLoaded
-            document.dispatchEvent(new Event('DOMContentLoaded'));
-            
-            await new Promise(process.nextTick);
-            
-            expect(document.getElementById('apiKey').value).toBe(mockApiKey);
-        });
-
-        test('saves API key when save button is clicked', async () => {
-            // Mock initial load
-            browser.storage.local.get
-                .mockResolvedValueOnce({ openaiApiKey: '' })
-                .mockResolvedValueOnce({ lastLanguage: 'ja' })
-                .mockResolvedValueOnce({ ja: { words: {}, settings: {} } });
-
-            // Trigger DOMContentLoaded first
-            document.dispatchEvent(new Event('DOMContentLoaded'));
-            await new Promise(process.nextTick);
-
-            // Clear previous mock calls
-            browser.storage.local.set.mockClear();
-
-            const mockApiKey = 'new-api-key';
-            const apiKeyInput = document.getElementById('apiKey');
-            const saveButton = document.getElementById('saveKey');
-
-            apiKeyInput.value = mockApiKey;
-            saveButton.click();
-
-            await new Promise(process.nextTick);
-
-            expect(browser.storage.local.set).toHaveBeenCalledWith({
-                openaiApiKey: mockApiKey
-            });
-        });
-
-        test('shows alert when trying to save empty API key', async () => {
-            // Mock window.alert
-            const alertMock = jest.spyOn(window, 'alert').mockImplementation(() => {});
-
-            // Mock initial load
-            browser.storage.local.get
-                .mockResolvedValueOnce({ openaiApiKey: '' })
-                .mockResolvedValueOnce({ lastLanguage: 'ja' })
-                .mockResolvedValueOnce({ ja: { words: {}, settings: {} } });
-
-            // Trigger DOMContentLoaded first
-            document.dispatchEvent(new Event('DOMContentLoaded'));
-            await new Promise(process.nextTick);
-
-            // Clear previous mock calls
-            browser.storage.local.set.mockClear();
-
-            const apiKeyInput = document.getElementById('apiKey');
-            const saveButton = document.getElementById('saveKey');
-
-            apiKeyInput.value = '';
-            saveButton.click();
-
-            expect(alertMock).toHaveBeenCalledWith("Please enter your OpenAI API key (sk-...).");
-            expect(browser.storage.local.set).not.toHaveBeenCalled();
-
-            alertMock.mockRestore();
-        });
-    });
-
-    describe('Language Selection', () => {
-        test('loads last selected language from storage', async () => {
-            browser.storage.local.get.mockResolvedValueOnce({ 
-                lastLanguage: 'zh',
-                zh: { words: {}, settings: {} }
-            });
-
-            document.dispatchEvent(new Event('DOMContentLoaded'));
-            await new Promise(process.nextTick);
-
-            expect(document.getElementById('targetLang').value).toBe('zh');
-        });
-
-        test('defaults to Japanese if no language is stored', async () => {
-            browser.storage.local.get.mockResolvedValueOnce({});
-
-            document.dispatchEvent(new Event('DOMContentLoaded'));
-            await new Promise(process.nextTick);
-
-            expect(document.getElementById('targetLang').value).toBe('ja');
-        });
-
-        test('updates form placeholders when language changes', async () => {
-            browser.storage.local.get
-                .mockResolvedValueOnce({}) // Initial load
-                .mockResolvedValueOnce({ zh: { words: {}, settings: {} } }); // Language data load
-
-            document.dispatchEvent(new Event('DOMContentLoaded'));
-            await new Promise(process.nextTick);
-
-            const langSelect = document.getElementById('targetLang');
-            langSelect.value = 'zh';
-            langSelect.dispatchEvent(new Event('change'));
-
-            await new Promise(process.nextTick);
-
-            const newHiragana = document.getElementById('newHiragana');
-            const newKanji = document.getElementById('newKanji');
-            expect(newHiragana.placeholder).toBe('Pronunciation');
-            expect(newKanji.style.display).toBe('none');
-        });
-    });
-
-    describe('Word Search', () => {
-        const mockWords = {
-            "hello": {
-                hiragana: "こんにちは",
-                kanji: "今日は",
-                useKanji: true
-            },
-            "world": {
-                hiragana: "せかい",
-                kanji: "世界",
-                useKanji: true
-            }
-        };
-
-        beforeEach(async () => {
-            browser.storage.local.get
-                .mockResolvedValueOnce({ lastLanguage: 'ja' })
-                .mockResolvedValueOnce({ ja: { words: mockWords, settings: {} } });
-
-            document.dispatchEvent(new Event('DOMContentLoaded'));
-            await new Promise(process.nextTick);
-        });
-
-        test('filters words based on English search', async () => {
-            const searchInput = document.getElementById('wordSearch');
-            searchInput.value = 'hel';
-            searchInput.dispatchEvent(new Event('input'));
-
-            await new Promise(process.nextTick);
-
-            const wordList = document.getElementById('wordList');
-            expect(wordList.innerHTML).toContain('hello');
-            expect(wordList.innerHTML).not.toContain('world');
-        });
-
-        test('filters words based on Japanese search', async () => {
-            const searchInput = document.getElementById('wordSearch');
-            searchInput.value = 'せか';
-            searchInput.dispatchEvent(new Event('input'));
-
-            await new Promise(process.nextTick);
-
-            const wordList = document.getElementById('wordList');
-            expect(wordList.innerHTML).not.toContain('hello');
-            expect(wordList.innerHTML).toContain('world');
-        });
-    });
-
-    describe('Word Management', () => {
-        beforeEach(async () => {
-            browser.storage.local.get
-                .mockResolvedValueOnce({ lastLanguage: 'ja' })
-                .mockResolvedValueOnce({ ja: { words: {}, settings: {} } });
-
-            document.dispatchEvent(new Event('DOMContentLoaded'));
-            await new Promise(process.nextTick);
-        });
-
-        test('adds new word with correct structure', async () => {
-            const newEnglish = document.getElementById('newEnglish');
-            const newHiragana = document.getElementById('newHiragana');
-            const newKanji = document.getElementById('newKanji');
-            const addButton = document.getElementById('addWord');
-
-            newEnglish.value = 'test';
-            newHiragana.value = 'てすと';
-            newKanji.value = 'テスト';
-
-            addButton.click();
-            await new Promise(process.nextTick);
-
-            expect(browser.storage.local.set).toHaveBeenCalledWith({
-                ja: expect.objectContaining({
-                    words: expect.objectContaining({
-                        test: {
-                            hiragana: 'てすと',
-                            kanji: 'テスト',
-                            useKanji: true,
-                            viewCount: 0,
-                            kanjiViewCounts: {}
-                        }
-                    })
-                })
-            });
-        });
-
-        test('prevents adding duplicate words', async () => {
-            // Mock window.alert
-            const alertMock = jest.spyOn(window, 'alert').mockImplementation(() => {});
-
-            // Set up initial state with existing word
-            browser.storage.local.get
-                .mockResolvedValueOnce({ lastLanguage: 'ja' })
-                .mockResolvedValueOnce({ 
-                    ja: { 
-                        words: { 
-                            'test': { 
-                                hiragana: 'てすと',
-                                kanji: 'テスト',
-                                useKanji: true,
-                                viewCount: 0,
-                                kanjiViewCounts: {}
-                            } 
-                        },
-                        settings: {}
-                    }
-                });
-
-            // Load the page
-            document.dispatchEvent(new Event('DOMContentLoaded'));
-            await new Promise(process.nextTick);
-
-            // Get initial state
-            const initialState = await browser.storage.local.get('ja');
-
-            // Clear previous mock calls
-            browser.storage.local.set.mockClear();
-
-            const newEnglish = document.getElementById('newEnglish');
-            const newHiragana = document.getElementById('newHiragana');
-            const addButton = document.getElementById('addWord');
-
-            newEnglish.value = 'test';
-            newHiragana.value = 'てすと';
-
-            addButton.click();
-            await new Promise(process.nextTick);
-
-            expect(alertMock).toHaveBeenCalledWith('This word already exists!');
-            
-            // Verify state hasn't changed
-            const currentState = await browser.storage.local.get('ja');
-            expect(currentState).toEqual(initialState);
-
-            alertMock.mockRestore();
-        });
-    });
-
-    describe('Kanji Toggle', () => {
-        const mockWords = {
-            "test": {
-                native: "テスト",
-                ruby: "てすと",
-                useKanji: true,
+const mockDictionaries = {
+    japaneseDictionary: {
+        words: {
+            hello: {
+                native: 'こんにちは',
+                ruby: 'こんにちは',
+                useKanji: false,
                 viewCount: 0,
                 kanjiViewCounts: {}
             }
-        };
+        },
+        settings: {
+            voice: 'ja-JP',
+            minKanjiViews: 100
+        }
+    },
+    chineseDictionary: { words: {}, settings: {} },
+    koreanDictionary: { words: {}, settings: {} },
+    spanishDictionary: { words: {}, settings: {} },
+    frenchDictionary: { words: {}, settings: {} },
+    germanDictionary: { words: {}, settings: {} },
+    polishDictionary: { words: {}, settings: {} },
+    welshDictionary: { words: {}, settings: {} },
+    defaultDictionaries: {
+        ja: {
+            words: {
+                hello: {
+                    native: 'こんにちは',
+                    ruby: 'こんにちは',
+                    useKanji: false,
+                    viewCount: 0,
+                    kanjiViewCounts: {}
+                }
+            },
+            settings: {
+                voice: 'ja-JP',
+                minKanjiViews: 100
+            }
+        }
+    }
+};
 
-        beforeEach(async () => {
-            browser.storage.local.get
-                .mockResolvedValueOnce({ lastLanguage: 'ja' })
-                .mockResolvedValueOnce({ 
-                    ja: { 
-                        words: mockWords, 
-                        settings: { 
-                            showKanji: true,
-                            minKanjiViews: 100,
-                            voice: "ja-JP"
-                        } 
-                    } 
-                });
+mockDictionaries.defaultDictionaries = {
+    ja: mockDictionaries.japaneseDictionary,
+    zh: mockDictionaries.chineseDictionary,
+    ko: mockDictionaries.koreanDictionary,
+    es: mockDictionaries.spanishDictionary,
+    fr: mockDictionaries.frenchDictionary,
+    de: mockDictionaries.germanDictionary,
+    pl: mockDictionaries.polishDictionary,
+    cy: mockDictionaries.welshDictionary
+};
 
-            document.dispatchEvent(new Event('DOMContentLoaded'));
-            await new Promise(process.nextTick);
+jest.mock('../lib/defaultDictionaries.js', () => mockDictionaries);
+
+// Import all functions to test
+const {
+    getKanjiViewCounts,
+    createWord,
+    validateNewWord,
+    addWord,
+    clearInputs,
+    loadLanguageData,
+    MESSAGES,
+    wordMatchesSearch,
+    updateFormPlaceholders,
+    handleAddWord,
+    renderWords
+} = require('../src/popup/popup.js');
+
+describe('Pure Functions', () => {
+    describe('getKanjiViewCounts', () => {
+        test.each([
+            [null, {}],
+            [undefined, {}],
+            ['', {}],
+            ['ひらがな', {}],
+            ['漢字', { '漢': 0, '字': 0 }],
+            ['漢字とひらがな', { '漢': 0, '字': 0 }]
+        ])('getKanjiViewCounts(%p) => %p', (input, expected) =>
+            expect(getKanjiViewCounts(input)).toEqual(expected));
+    });
+
+    describe('createWord', () => {
+        test.each([
+            ['ja', 'こんにちは', 'こんにちは', { native: 'こんにちは', ruby: 'こんにちは', viewCount: 0 }],
+            ['ja', 'こんにちは', undefined, { native: 'こんにちは', ruby: undefined, viewCount: 0 }],
+            ['en', 'hello', undefined, { native: 'hello', ruby: undefined, viewCount: 0 }]
+        ])('createWord(%p, %p, %p) => %p', (lang, native, ruby, expected) =>
+            expect(createWord(lang, native, ruby)).toEqual(expected));
+    });
+
+    describe('validateNewWord', () => {
+        const mockAlert = jest.spyOn(window, 'alert').mockImplementation(() => {});
+        const currentLangData = { words: { existing: {} } };
+
+        afterAll(() => mockAlert.mockRestore());
+
+        test.each([
+            ['', 'test', false, MESSAGES.REQUIRED_FIELDS],
+            ['test', '', false, MESSAGES.REQUIRED_FIELDS],
+            ['', '', false, MESSAGES.REQUIRED_FIELDS],
+            ['existing', 'test', false, MESSAGES.WORD_EXISTS],
+            ['new', 'test', true, null]
+        ])('validateNewWord(%p, %p) => %p with alert: %p', (en, translation, expected, alertMessage) => {
+            expect(validateNewWord(en, translation, currentLangData)).toBe(expected);
+            alertMessage 
+                ? expect(mockAlert).toHaveBeenCalledWith(alertMessage)
+                : expect(mockAlert).not.toHaveBeenCalled();
+            mockAlert.mockClear();
+        });
+    });
+
+    describe('clearInputs', () => {
+        test.each([
+            [[]],
+            [[{ value: 'test1' }]],
+            [[{ value: 'test1' }, { value: 'test2' }]],
+            [[{ value: 'test1' }, { value: 'test2' }, { value: 'test3' }]]
+        ])('clearInputs(...%p) clears all values', (inputs) => {
+            clearInputs(...inputs);
+            inputs.forEach(input => expect(input.value).toBe(''));
+        });
+    });
+});
+
+describe('Storage Functions', () => {
+    beforeEach(() => {
+        browser.storage.local.get.mockClear();
+        browser.storage.local.set.mockClear();
+    });
+
+    describe('loadLanguageData', () => {
+        test.each([
+            ['ja', { ja: { words: { test: {} }, settings: {} } }, { words: { test: {} }, settings: {} }],
+            ['ja', {}, mockDictionaries.defaultDictionaries.ja],
+            ['xx', {}, { words: {}, settings: {} }]
+        ])('loadLanguageData(%p) with storage %p => %p', async (lang, storage, expected) => {
+            browser.storage.local.get.mockResolvedValue(storage);
+            expect(await loadLanguageData(lang)).toEqual(expected);
+            expect(browser.storage.local.get).toHaveBeenCalledWith(lang);
+        });
+    });
+
+    describe('addWord', () => {
+        const mockAlert = jest.spyOn(window, 'alert').mockImplementation(() => {});
+        
+        beforeEach(() => {
+            browser.storage.local.set.mockResolvedValue();
+            mockAlert.mockClear();
         });
 
-        test('toggles kanji for individual word', async () => {
-            // Wait for the word list to be rendered
-            await new Promise(process.nextTick);
+        afterAll(() => mockAlert.mockRestore());
 
-            const wordList = document.getElementById('wordList');
-            const kanjiToggle = wordList.querySelector('.kanji-toggle');
-            
-            expect(kanjiToggle).toBeTruthy();
-            kanjiToggle.click();
-            await new Promise(process.nextTick);
-
-            // Verify the storage was updated with useKanji set to false
-            expect(browser.storage.local.set).toHaveBeenCalledWith({
-                ja: {
+        test.each([
+            [
+                'ja',
+                { words: {} },
+                'test',
+                'テスト',
+                'てすと',
+                true,
+                {
                     words: {
                         test: {
-                            native: "テスト",
-                            ruby: "てすと",
-                            useKanji: false,
-                            viewCount: 0,
-                            kanjiViewCounts: {}
+                            native: 'テスト',
+                            ruby: 'てすと',
+                            viewCount: 0
                         }
-                    },
-                    settings: { 
-                        showKanji: true,
-                        minKanjiViews: 100,
-                        voice: "ja-JP"
                     }
                 }
+            ],
+            [
+                'ja',
+                {
+                    words: { existing: { native: 'existing', viewCount: 0 } },
+                    settings: { someOption: true }
+                },
+                'test',
+                'テスト',
+                'てすと',
+                true,
+                {
+                    words: {
+                        existing: { native: 'existing', viewCount: 0 },
+                        test: {
+                            native: 'テスト',
+                            ruby: 'てすと',
+                            viewCount: 0
+                        }
+                    },
+                    settings: { someOption: true }
+                }
+            ],
+            [
+                'ja',
+                { words: { test: { native: 'テスト', ruby: 'てすと' } } },
+                'test',
+                'テスト2',
+                'てすと2',
+                false,
+                null
+            ]
+        ])('addWord(%p, %p, %p, %p, %p) => %p with expected data %p', 
+            async (lang, currentData, word, translation, ruby, expectedSuccess, expectedData) => {
+                const success = await addWord(lang, currentData, word, translation, ruby);
+                expect(success).toBe(expectedSuccess);
+                
+                if (expectedData) {
+                    expect(browser.storage.local.set).toHaveBeenCalledWith({
+                        [lang]: expectedData
+                    });
+                }
             });
+    });
+});
+
+describe('Search Functions', () => {
+    describe('wordMatchesSearch', () => {
+        const wordData = {
+            native: '漢字',
+            ruby: 'かんじ',
+            hiragana: 'かんじ',
+            kanji: '漢字'
+        };
+
+        test.each([
+            ['', true],
+            ['kan', true],
+            ['かん', true],
+            ['漢', true],
+            ['xyz', false],
+            ['かな', false]
+        ])('wordMatchesSearch with search term %p returns %p', (searchTerm, expected) => {
+            expect(wordMatchesSearch('kanji', wordData, searchTerm)).toBe(expected);
+        });
+
+        test('handles missing word data fields', () => {
+            expect(wordMatchesSearch('test', {}, 'test')).toBe(true);
+        });
+    });
+});
+
+describe('DOM Functions', () => {
+    let container;
+    let speakWord;
+
+    beforeEach(() => {
+        container = document.createElement('div');
+        container.id = 'wordList';
+        document.body.appendChild(container);
+        speakWord = jest.fn();
+        global.speakWord = speakWord;
+    });
+
+    afterEach(() => {
+        document.body.removeChild(container);
+        delete global.speakWord;
+    });
+
+    describe('updateFormPlaceholders', () => {
+        test('configures form for Japanese', () => {
+            // Setup
+            container.innerHTML = `
+                <div class="add-word-form">
+                    <input id="newTranslation" />
+                    <input id="newFurigana" />
+                </div>
+            `;
+            const newTranslation = container.querySelector('#newTranslation');
+            const newFurigana = container.querySelector('#newFurigana');
+
+            // Test
+            updateFormPlaceholders('ja', newTranslation, newFurigana);
+
+            // Assert
+            expect(newFurigana.style.display).toBe('block');
+            expect(container.querySelector('.add-word-form').style.gridTemplateColumns)
+                .toBe('repeat(4, 1fr)');
+        });
+
+        test('configures form for non-Japanese', () => {
+            // Setup
+            container.innerHTML = `
+                <div class="add-word-form">
+                    <input id="newTranslation" />
+                    <input id="newFurigana" />
+                </div>
+            `;
+            const newTranslation = container.querySelector('#newTranslation');
+            const newFurigana = container.querySelector('#newFurigana');
+
+            // Test
+            updateFormPlaceholders('es', newTranslation, newFurigana);
+
+            // Assert
+            expect(newFurigana.style.display).toBe('none');
+            expect(container.querySelector('.add-word-form').style.gridTemplateColumns)
+                .toBe('repeat(3, 1fr)');
+        });
+    });
+
+    describe('handleAddWord', () => {
+        beforeEach(() => {
+            browser.storage.local.set.mockResolvedValue();
+            jest.spyOn(window, 'alert').mockImplementation(() => {});
+        });
+
+        afterEach(() => {
+            window.alert.mockRestore();
+        });
+
+        test('successfully adds word and clears inputs', async () => {
+            // Setup
+            const inputs = {
+                newEnglish: { value: 'test' },
+                newTranslation: { value: 'テスト' },
+                newFurigana: { value: 'てすと' }
+            };
+            const currentLangData = { words: {} };
+
+            // Test
+            await handleAddWord('ja', currentLangData, inputs);
+
+            // Assert
+            expect(inputs.newEnglish.value).toBe('');
+            expect(inputs.newTranslation.value).toBe('');
+            expect(inputs.newFurigana.value).toBe('');
+            expect(browser.storage.local.set).toHaveBeenCalled();
+        });
+
+        test('handles failed word addition', async () => {
+            // Setup
+            const inputs = {
+                newEnglish: { value: '' },
+                newTranslation: { value: 'テスト' },
+                newFurigana: { value: 'てすと' }
+            };
+            const currentLangData = { words: {} };
+
+            // Test
+            await handleAddWord('ja', currentLangData, inputs);
+
+            // Assert
+            expect(inputs.newEnglish.value).toBe('');
+            expect(browser.storage.local.set).not.toHaveBeenCalled();
+            expect(window.alert).toHaveBeenCalledWith(MESSAGES.REQUIRED_FIELDS);
+        });
+    });
+
+    describe('renderWords', () => {
+        let container;
+        let wordList;
+        let header;
+        let getElementByIdSpy;
+
+        beforeEach(() => {
+            container = document.createElement('div');
+            container.className = 'container word-list';
+            
+            header = document.createElement('div');
+            header.className = 'word-item word-header';
+            header.innerHTML = `
+                <div>English</div>
+                <div>Reading</div>
+                <div>Use Kanji</div>
+                <div></div>
+                <div></div>
+            `;
+            
+            wordList = document.createElement('div');
+            wordList.id = 'wordList';
+            
+            container.appendChild(header);
+            container.appendChild(wordList);
+            document.body.appendChild(container);
+            
+            // Mock getElementById to return our test element
+            getElementByIdSpy = jest.spyOn(document, 'getElementById').mockImplementation((id) => {
+                if (id === 'wordList') return wordList;
+                return null;
+            });
+            
+            // Reset mock implementations
+            mockWordDisplay.getDisplayText.mockImplementation(data => data.native);
+            mockWordDisplay.formatTooltip.mockImplementation(data => data.native);
+            mockWordDisplay.speakWord.mockClear();
+            browser.storage.local.set.mockClear();
+            browser.storage.local.get.mockClear();
+        });
+
+        afterEach(() => {
+            document.body.removeChild(container);
+            getElementByIdSpy.mockRestore();
+            jest.clearAllMocks();
+        });
+
+        test('renders words correctly', () => {
+            const currentLang = 'ja';
+            const currentLangData = {
+                words: {
+                    'test': {
+                        native: '漢字',
+                        ruby: 'かんじ',
+                        useKanji: true
+                    }
+                },
+                settings: { showKanji: true }
+            };
+
+            renderWords(currentLang, currentLangData);
+
+            // Wait for any async operations to complete
+            jest.runAllTimers();
+
+            const wordItems = Array.from(wordList.children);
+            expect(wordItems.length).toBe(1);
+            
+            const wordItem = wordItems[0];
+            expect(wordItem.children[0].textContent.trim()).toBe('test');
+            expect(wordItem.children[1].textContent.trim()).toBe('漢字');
+            expect(wordItem.querySelector('.kanji-toggle')).toBeTruthy();
+            expect(wordItem.querySelector('.delete-btn')).toBeTruthy();
+            expect(wordItem.querySelector('.speak-btn')).toBeTruthy();
+        });
+
+        test('handles empty word list', () => {
+            const currentLang = 'ja';
+            const currentLangData = {
+                words: {},
+                settings: { showKanji: true }
+            };
+
+            renderWords(currentLang, currentLangData);
+
+            // Wait for any async operations to complete
+            jest.runAllTimers();
+
+            const wordItems = Array.from(wordList.children);
+            expect(wordItems.length).toBe(0);
+        });
+
+        test('filters words by search term', () => {
+            const currentLang = 'ja';
+            const currentLangData = {
+                words: {
+                    'test': {
+                        native: '漢字',
+                        ruby: 'かんじ',
+                        useKanji: true
+                    },
+                    'hello': {
+                        native: 'こんにちは',
+                        ruby: 'こんにちは',
+                        useKanji: true
+                    }
+                },
+                settings: { showKanji: true }
+            };
+
+            renderWords(currentLang, currentLangData, 'test');
+
+            // Wait for any async operations to complete
+            jest.runAllTimers();
+
+            const wordItems = Array.from(wordList.children);
+            expect(wordItems.length).toBe(1);
+            expect(wordItems[0].children[0].textContent.trim()).toBe('test');
+            expect(wordItems[0].children[1].textContent.trim()).toBe('漢字');
+        });
+
+        test('adds event listeners', () => {
+            const currentLang = 'ja';
+            const currentLangData = {
+                words: {
+                    'test': {
+                        native: '漢字',
+                        ruby: 'かんじ',
+                        useKanji: true
+                    }
+                },
+                settings: { 
+                    showKanji: true,
+                    voice: 'ja-JP'
+                }
+            };
+
+            renderWords(currentLang, currentLangData);
+
+            // Wait for any async operations to complete
+            jest.runAllTimers();
+
+            const wordItems = Array.from(wordList.children);
+            const speakBtn = wordItems[0].querySelector('.speak-btn');
+            expect(speakBtn).toBeTruthy();
+
+            speakBtn.click();
+            expect(mockWordDisplay.speakWord).toHaveBeenCalledWith('漢字', currentLangData.settings.voice);
         });
     });
 }); 

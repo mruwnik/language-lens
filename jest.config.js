@@ -4,7 +4,8 @@ module.exports = {
         '^@lib/(.*)$': '<rootDir>/src/lib/$1',
         '^@popup/(.*)$': '<rootDir>/src/popup/$1',
         '^@background/(.*)$': '<rootDir>/src/background/$1',
-        '^@content/(.*)$': '<rootDir>/src/content/$1'
+        '^@content/(.*)$': '<rootDir>/src/content/$1',
+        '^../lib/(.*)$': '<rootDir>/src/lib/$1'
     },
     setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
     transform: {

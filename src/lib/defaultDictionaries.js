@@ -327,3 +327,14 @@ Object.values(japaneseDictionary.words).forEach(word => {
         word.viewCount = 0;
     });
 }); 
+
+export const defaultDictionaries = {
+    ja: japaneseDictionary,
+    zh: chineseDictionary,
+    ko: koreanDictionary,
+    es: spanishDictionary,
+    fr: frenchDictionary,
+    de: germanDictionary,
+    pl: polishDictionary,
+    cy: welshDictionary
+};
