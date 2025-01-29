@@ -16,7 +16,27 @@ describe('getDisplayText', () => {
             ruby: 'かんじ',
             useKanji: false
         };
-        expect(getDisplayText(wordData)).toBe('かんじ');
+        expect(getDisplayText(wordData)).toBe('<ruby>漢字<rt>かんじ</rt></ruby>');
+    });
+
+    test('returns native text when no ruby exists', () => {
+        const wordData = {
+            native: '漢字',
+            useKanji: false
+        };
+        expect(getDisplayText(wordData)).toBe('漢字');
+    });
+
+    test('returns ruby text when kanji display is disabled globally and useKanji is false', () => {
+        const wordData = {
+            native: '漢字',
+            ruby: 'かんじ',
+            useKanji: false
+        };
+        const settings = {
+            showKanji: false
+        };
+        expect(getDisplayText(wordData, settings)).toBe('かんじ');
     });
 });
 
