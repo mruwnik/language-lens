@@ -3,14 +3,22 @@
 /**
  * Get the display text for a word based on the display rules
  * @param {Object} wordData - The word data object
- * @param {Object} settings - Language settings (e.g., minKanjiViews)
+ * @param {Object} settings - Language settings (e.g., minKanjiViews, showKanji)
  * @returns {string} HTML string with proper formatting
  */
 export function getDisplayText(wordData, settings = {}) {
-    if (!wordData.useKanji || !wordData.ruby) {
+    // If there are no ruby, or the word should just be shown as native (i.e. kanji),
+    // then just show the native word.
+    if (wordData.useKanji || !wordData.ruby) {
         return wordData.native;
     }
 
+    // If kanji display is disabled, show only ruby
+    if (settings.showKanji === false) {
+        return wordData.ruby;
+    }
+
+    // If the word should be shown as kanji, check if the user has seen all the kanji in the word.
     const minViews = settings.minKanjiViews || 100;
     const allKanjiSeen = [...wordData.native]
         .filter(char => char.match(/[\u4e00-\u9faf]/))

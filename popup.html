@@ -5,7 +5,7 @@
   <title>Partial Translation Settings</title>
   <style>
     body {
-      width: 400px;
+      width: 500px;
       padding: 16px;
       font-family: system-ui, -apple-system, sans-serif;
       color: #333;
@@ -26,7 +26,7 @@
     }
     .word-item {
       display: grid;
-      grid-template-columns: minmax(80px, 1fr) minmax(120px, 1.5fr) 40px 30px 30px;
+      grid-template-columns: minmax(80px, 1fr) minmax(120px, 1.5fr) auto auto auto;
       gap: 12px;
       padding: 12px;
       border-bottom: 1px solid #eee;
@@ -45,6 +45,11 @@
       padding: 8px 12px;
       background: #f8f9fa;
       border-bottom: 1px solid #eee;
+    }
+    .word-header > div {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     button {
       padding: 6px 12px;
@@ -71,8 +76,14 @@
     .api-section {
       display: grid;
       grid-template-columns: 1fr auto;
-      gap: 12px;
-      align-items: center;
+      gap: 16px;
+      align-items: start;
+    }
+    .api-section > div {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
     }
     h2 {
       margin: 0 0 8px 0;
@@ -80,10 +91,12 @@
       color: #2c3e50;
     }
     input[type="text"], input[type="password"] {
-      padding: 6px 12px;
+      padding: 8px 12px;
       border: 1px solid #ddd;
       border-radius: 4px;
       font-size: 14px;
+      width: 100%;
+      box-sizing: border-box;
     }
     input[type="text"]:focus, input[type="password"]:focus {
       outline: none;
@@ -108,6 +121,8 @@
       background: #28a745;
       color: white;
       border: none;
+      padding: 8px 16px;
+      margin-top: 36px;
     }
     #saveKey:hover {
       background: #218838;
@@ -200,13 +215,55 @@
       text-align: center;
       white-space: nowrap;
     }
+    .kanji-toggle {
+      background: none;
+      border: 1px solid #ccc;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #666;
+      font-size: 14px;
+      min-width: 28px;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .kanji-toggle:hover {
+      background: #f0f0f0;
+      border-color: #999;
+    }
+    .kanji-toggle.active {
+      background: #e8f0fe;
+      color: #28a745;
+      border-color: #28a745;
+    }
+    .kanji-toggle:not(.active) {
+      color: #dc3545;
+    }
+    .search-container {
+      margin-bottom: 12px;
+    }
+    #wordSearch {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    #wordSearch:focus {
+      outline: none;
+      border-color: #80bdff;
+      box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+    }
   </style>
 </head>
 <body>
   <div class="section api-section">
     <div>
       <h2>OpenAI API Key</h2>
-      <input type="password" id="apiKey" placeholder="sk-..." style="width: 100%" />
+      <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
     </div>
     <button id="saveKey">Save Key</button>
   </div>
@@ -227,11 +284,15 @@
 
   <div class="section">
     <h2>Known Words</h2>
+    <div class="search-container">
+      <input type="text" id="wordSearch" placeholder="Search words..." />
+    </div>
     <div class="word-list">
       <div class="word-item word-header">
         <div>English</div>
-        <div>Hiragana</div>
-        <div>Kanji</div>
+        <div>Reading</div>
+        <div>Use Kanji</div>
+        <div></div>
         <div></div>
       </div>
       <div id="wordList">

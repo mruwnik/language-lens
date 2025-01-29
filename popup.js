@@ -28,6 +28,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     console.log('DOM Content Loaded');
     
     const apiKeyInput = document.getElementById("apiKey");
+    console.log('API Key Input found:', !!apiKeyInput, apiKeyInput);
+    
     const saveKeyBtn = document.getElementById("saveKey");
     const wordList = document.getElementById("wordList");
     const newEnglish = document.getElementById("newEnglish");
@@ -35,6 +37,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const newKanji = document.getElementById("newKanji");
     const addWordBtn = document.getElementById("addWord");
     const langSelect = document.getElementById("targetLang");
+    const wordSearch = document.getElementById("wordSearch");
 
     console.log('Elements found:', {
         apiKeyInput: !!apiKeyInput,
@@ -44,7 +47,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         newHiragana: !!newHiragana,
         newKanji: !!newKanji,
         addWordBtn: !!addWordBtn,
-        langSelect: !!langSelect
+        langSelect: !!langSelect,
+        wordSearch: !!wordSearch
     });
 
     // Track deleted words for undo
@@ -72,11 +76,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     const data = await browser.storage.local.get(["openaiApiKey", "lastLanguage"]);
     console.log('Loaded storage data:', {
         hasApiKey: !!data.openaiApiKey,
+        apiKeyValue: data.openaiApiKey,
         lastLanguage: data.lastLanguage
     });
 
-    if (data.openaiApiKey) {
+    if (data.openaiApiKey && apiKeyInput) {
+        console.log('Setting API key input value:', data.openaiApiKey);
         apiKeyInput.value = data.openaiApiKey;
+        console.log('API key input value after setting:', apiKeyInput.value);
     }
 
     // Set current language (default to Japanese if not set)
@@ -174,9 +181,32 @@ document.addEventListener("DOMContentLoaded", async () => {
             alert("Please enter your OpenAI API key (sk-...).");
             return;
         }
-        await browser.storage.local.set({ openaiApiKey: key });
-        alert("API key saved!");
+        try {
+            console.log('Saving API key...');
+            await browser.storage.local.set({ openaiApiKey: key });
+            console.log('API key saved successfully');
+            alert("API key saved!");
+        } catch (error) {
+            console.error('Error saving API key:', error);
+            alert("Error saving API key. Please try again.");
+        }
     });
+
+    // Load API key on startup
+    async function loadApiKey() {
+        try {
+            const { openaiApiKey } = await browser.storage.local.get('openaiApiKey');
+            console.log('Loading API key:', !!openaiApiKey);
+            if (openaiApiKey) {
+                apiKeyInput.value = openaiApiKey;
+            }
+        } catch (error) {
+            console.error('Error loading API key:', error);
+        }
+    }
+
+    // Load API key immediately
+    await loadApiKey();
 
     // Show undo message
     function showUndoMessage(wordKey, wordData, messageId) {
@@ -243,25 +273,96 @@ document.addEventListener("DOMContentLoaded", async () => {
         return container;
     }
 
+    // Update header based on language
+    function updateHeader() {
+        const header = document.querySelector('.word-item.word-header');
+        const hasKanji = currentLang === 'ja';
+        
+        header.innerHTML = `
+            <div>English</div>
+            <div>${currentLang === 'ja' ? 'Reading' : 'Native'}</div>
+            ${hasKanji ? '<div>Use Kanji</div>' : '<div></div>'}
+            <div></div>
+            <div></div>
+        `;
+
+        if (hasKanji) {
+            const toggle = document.createElement('button');
+            toggle.className = 'kanji-toggle';
+            toggle.title = 'Toggle Global Kanji Display';
+            toggle.textContent = '漢字';
+            toggle.classList.toggle('active', currentLangData.settings?.showKanji ?? true);
+            
+            header.children[1].appendChild(toggle);
+
+            toggle.addEventListener('click', async () => {
+                currentLangData.settings = currentLangData.settings || {};
+                currentLangData.settings.showKanji = !currentLangData.settings.showKanji;
+                toggle.classList.toggle('active', currentLangData.settings.showKanji);
+                await browser.storage.local.set({ [currentLang]: currentLangData });
+                renderWords();
+            });
+        }
+    }
+
+    // Add search functionality
+    let searchTerm = '';
+    wordSearch.addEventListener('input', (e) => {
+        searchTerm = e.target.value.toLowerCase();
+        renderWords();
+    });
+
+    // Helper function to check if a word matches the search
+    function wordMatchesSearch(english, wordData) {
+        if (!searchTerm) return true;
+        
+        const searchIn = [
+            english.toLowerCase(),
+            (wordData.hiragana || '').toLowerCase(),
+            (wordData.ruby || '').toLowerCase(),
+            (wordData.native || '').toLowerCase(),
+            (wordData.kanji || '').toLowerCase()
+        ];
+        
+        return searchIn.some(text => text.includes(searchTerm));
+    }
+
     // Render word list
     function renderWords() {
         console.log('Rendering words for language:', currentLang);
         console.log('Current language data:', currentLangData);
         
         const sortedWords = Object.entries(currentLangData.words)
+            .filter(([english, data]) => wordMatchesSearch(english, data))
             .sort((a, b) => a[0].localeCompare(b[0]));
         
-        console.log('Sorted words:', sortedWords.length);
+        console.log('Sorted and filtered words:', sortedWords.length);
+
+        // Update header first
+        updateHeader();
         
-        wordList.innerHTML = sortedWords.map(([key, data]) => `
-            <div class="word-item">
-                <div title="${key}">${key}</div>
-                <div title="${data.ruby || data.native}">${getDisplayText(data)}</div>
-                <div title="${formatTooltip(data)}">${data.useKanji ? '✓' : '-'}</div>
-                <button class="delete-btn" data-word="${key}">×</button>
-                <button class="speak-btn" data-word="${key}">🔊</button>
-            </div>
-        `).join('');
+        // Render words
+        const showKanji = currentLangData.settings?.showKanji ?? true;
+        wordList.innerHTML = sortedWords.map(([key, data]) => {
+            const displayText = getDisplayText(data, currentLangData.settings);
+            const useKanji = currentLang === 'ja' && data.ruby;
+            const useKanjiClass = data.useKanji ? 'active' : '';
+            
+            return `
+                <div class="word-item">
+                    <div title="${key}">${key}</div>
+                    <div title="${formatTooltip(data, currentLang)}">${displayText}</div>
+                    ${useKanji ? 
+                        `<button class="kanji-toggle ${useKanjiClass}" data-word="${key}" title="Toggle Kanji for this word">
+                            ${data.useKanji ? '✓' : '✗'}
+                        </button>` : 
+                        '<div></div>'
+                    }
+                    <button class="delete-btn" data-word="${key}">×</button>
+                    <button class="speak-btn" data-word="${key}">🔊</button>
+                </div>
+            `;
+        }).join('');
         
         console.log('Rendered HTML, adding event listeners');
 
@@ -285,6 +386,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                 renderWords();
                 
                 showUndoMessage(wordKey, wordData, messageId);
+            });
+        });
+
+        // Add kanji toggle listeners
+        wordList.querySelectorAll('.kanji-toggle').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const wordKey = e.target.dataset.word;
+                const wordData = currentLangData.words[wordKey];
+                wordData.useKanji = !wordData.useKanji;
+                await browser.storage.local.set({ [currentLang]: currentLangData });
+                renderWords();
             });
         });
 
