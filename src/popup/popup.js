@@ -1,6 +1,6 @@
 // popup.js
 
-import { getDisplayText, formatTooltip, speakWord } from './wordDisplay.js';
+import { getDisplayText, formatTooltip, speakWord } from '../lib/wordDisplay.js';
 import {
     japaneseDictionary,
     chineseDictionary,
@@ -10,7 +10,7 @@ import {
     germanDictionary,
     polishDictionary,
     welshDictionary
-} from './defaultDictionaries.js';
+} from '../lib/defaultDictionaries.js';
 
 console.log('Starting popup.js');
 console.log('Checking dictionaries:', {

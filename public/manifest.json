@@ -1,0 +1,55 @@
+{
+    "manifest_version": 3,
+    "name": "Language Learning Assistant",
+    "version": "1.0",
+    "description": "Learn languages with partial translation and word tracking",
+    
+    "action": {
+      "default_popup": "popup.html",
+      "default_title": "Language Learning Assistant"
+    },
+  
+    "icons": {
+      "48": "icons/icon48.png"
+    },
+  
+    // The background script
+    "background": {
+      "scripts": ["background.js"]
+    },
+  
+    // Content script that runs on every page (for demo)
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["content.js"],
+        "css": []
+      }
+    ],
+  
+    // Permissions
+    "permissions": [
+      "storage",
+      "activeTab",
+      "scripting"
+    ],
+  
+    "content_security_policy": {
+      "extension_pages": "script-src 'self' 'unsafe-eval'; object-src 'self'"
+    },
+  
+    "web_accessible_resources": [
+      {
+        "resources": ["lib/*"],
+        "matches": ["<all_urls>"]
+      }
+    ],
+  
+    "browser_specific_settings": {
+      "gecko": {
+        "id": "language-learning-assistant@example.com",
+        "strict_min_version": "109.0"
+      }
+    }
+  }
+  
