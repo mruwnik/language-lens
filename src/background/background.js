@@ -5,7 +5,6 @@ import {
   makeTranslationCacheKey, 
   containsAnyWord, 
   splitIntoSentences,
-  makeHash
 } from '../lib/textProcessing.js';
 import { debounce } from '../lib/utils.js';
 
@@ -13,6 +12,11 @@ import { debounce } from '../lib/utils.js';
 const CACHE_MAX_SIZE = 1000; // Maximum number of translations to store
 const CACHE_EXPIRY_DAYS = 5;
 const CACHE_EXPIRY_MS = CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+
+// Batch configuration
+const BATCH_SIZE = 1000; // characters per batch
+const BATCH_DELAY = 100; // ms between batches
+const MAX_RETRIES = 3;
 
 // Load cache from storage on startup
 let translationCache = {};
@@ -58,7 +62,70 @@ const saveCache = debounce(async () => {
   }
 }, 1000);
 
-// Update the message listener to use the new settings
+const batchSentences = (sentences) => {
+  const batches = [];
+  let currentBatch = [];
+  let currentSize = 0;
+
+  sentences.forEach(sentence => {
+    const size = sentence.text.length;
+    if (currentSize + size > BATCH_SIZE && currentBatch.length > 0) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentSize = 0;
+    }
+    currentBatch.push(sentence);
+    currentSize += size;
+  });
+
+  if (currentBatch.length > 0) {
+    batches.push(currentBatch);
+  }
+
+  return batches;
+};
+
+const translateBatch = async (batch, relevantWords, settings, now) => {
+  const translationInput = batch
+    .map(s => `<s id="${s.id}">${s.text}</s>`)
+    .join('\n');
+
+  const translated = await callLlmProvider(
+    translationInput,
+    relevantWords, 
+    settings.apiKey, 
+    settings.provider,
+    settings.model
+  );
+
+  // Parse translated text back into sentences with IDs
+  const translatedSentences = translated
+    .match(/<s id="([^"]+)">([^<]+)<\/s>/g)
+    ?.map(s => {
+      const match = s.match(/<s id="([^"]+)">([^<]+)<\/s>/);
+      return match ? {
+        id: match[1],
+        text: match[2].trim()
+      } : null;
+    })
+    .filter(Boolean) ?? [];
+
+  // Cache translations
+  translatedSentences.forEach(translation => {
+    const sentence = batch.find(s => s.id === translation.id);
+    if (sentence) {
+      const cacheKey = makeTranslationCacheKey(sentence.text, relevantWords);
+      translationCache[cacheKey] = {
+        text: translation.text,
+        timestamp: now
+      };
+    }
+  });
+
+  return translatedSentences;
+};
+
+// Update the message listener to use batching
 browser.runtime.onMessage.addListener(async (request, sender) => {
   if (request.type === "PARTIAL_TRANSLATE") {
     const { sentences, knownWords } = request.payload;
@@ -111,49 +178,37 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
         };
       }
 
-      // Call selected provider with model for uncached sentences
-      const translationInput = uncachedSentences
-        .map(s => `<s id="${s.id}">${s.text}</s>`)
-        .join('\n');
-
-      console.log('uncachedSentences', uncachedSentences);
-      console.log('translationInput', translationInput);
-
-      const translated = await callLlmProvider(
-        translationInput,
-        relevantWords, 
-        settings.apiKey, 
-        settings.provider,
-        settings.model
-      );
-
-      console.log('translated', translated);
-
-      // Parse translated text back into sentences with IDs
-      const translatedSentences = translated
-        .match(/<s id="([^"]+)">([^<]+)<\/s>/g)
-        ?.map(s => {
-          const match = s.match(/<s id="([^"]+)">([^<]+)<\/s>/);
-          return match ? {
-            id: match[1],
-            text: match[2].trim()
-          } : null;
-        })
-        .filter(Boolean) ?? [];
-      console.log('translatedSentences', translatedSentences);
-
-      // Cache each newly translated sentence
-      translatedSentences.forEach(translation => {
-        const sentence = uncachedSentences.find(s => s.id === translation.id);
-        if (sentence) {
-          const cacheKey = makeTranslationCacheKey(sentence.text, relevantWords);
-          translationCache[cacheKey] = {
-            text: translation.text,
-            timestamp: now
-          };
+      // Split uncached sentences into batches
+      const batches = batchSentences(uncachedSentences);
+      
+      // Process each batch with retries and delays
+      for (const batch of batches) {
+        let retries = 0;
+        let success = false;
+        
+        while (!success && retries < MAX_RETRIES) {
+          try {
+            const batchTranslations = await translateBatch(batch, relevantWords, settings, now);
+            translations.push(...batchTranslations);
+            success = true;
+            
+            // Add delay between batches if there are more
+            if (batches.length > 1) {
+              await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+            }
+          } catch (err) {
+            retries++;
+            if (retries === MAX_RETRIES) {
+              console.error(`Failed to translate batch after ${MAX_RETRIES} retries:`, err);
+              // On final retry failure, add untranslated sentences
+              translations.push(...batch.map(s => ({ id: s.id, text: s.text })));
+            } else {
+              // Exponential backoff between retries
+              await new Promise(resolve => setTimeout(resolve, BATCH_DELAY * Math.pow(2, retries)));
+            }
+          }
         }
-        translations.push(translation);
-      });
+      }
 
       // If cache is too large, remove oldest entries
       const entries = Object.entries(translationCache);

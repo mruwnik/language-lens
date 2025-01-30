@@ -147,6 +147,7 @@ function buildPartialTranslationPrompt(text, relevantWords) {
                                 .filter(word => word[0] && word[1])
                                 .map(word => `${word[0]} -> ${word[1]}`)
                                 .join('\n');
+                                console.log(wordList);
 
   return `Translate this text by replacing the specified source words with their target language equivalents.
 Keep the XML tags intact and only translate the text inside them.  

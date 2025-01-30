@@ -557,12 +557,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     timeRange: document.getElementById("timeRange"),
   };
 
-  console.log("Initializing LLM settings");
   // Initialize LLM settings
   const settings = await loadLlmSettings();
   await initializeLlmSettings();
 
-  console.log("Initializing LLM settings complete");
   // Provider change handler
   elements.llmProvider.addEventListener("change", async () => {
     await updateModelOptions(elements.llmProvider.value);
@@ -572,11 +570,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  console.log("Setting up save settings handler");
   // Save settings handler
   elements.saveSettingsBtn.addEventListener("click", saveLlmSettingsHandler);
 
-  console.log("Loading existing data");
   // Load existing data
   const data = await browser.storage.local.get([
     "openaiApiKey",
@@ -587,12 +583,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     elements.apiKeyInput.value = data.openaiApiKey;
   }
 
-  console.log("Setting current language");
   // Set current language (default to Japanese if not set)
   let currentLang = data.lastLanguage || "ja";
   elements.langSelect.value = currentLang;
 
-  console.log("Checking for dictionary initialization");
   // Initialize dictionary if needed
   const langData = await browser.storage.local.get(currentLang);
   if (!langData[currentLang]) {
@@ -606,11 +600,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  console.log("Loading current language data");
   // Initialize or load current language data
   let currentLangData = await loadLanguageData(currentLang);
 
-  console.log("Setting up language change handler");
   // Language change handler
   elements.langSelect.addEventListener("change", async () => {
     const newLang = elements.langSelect.value.trim().toLowerCase();
@@ -631,15 +623,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
 
-    console.log("Loading new language data");
     currentLangData = await loadLanguageData(currentLang);
-    console.log("Updating form placeholders");
     updateFormPlaceholders(
       currentLang,
       elements.newTranslation,
       elements.newFurigana
     );
-    console.log("Rendering words");
     renderWords(currentLang, currentLangData);
   });
 
@@ -684,9 +673,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     elements.newTranslation,
     elements.newFurigana
   );
-  console.log("Rendering words");
   renderWords(currentLang, currentLangData);
-  console.log("Initialization complete");
 });
 
 // Voice initialization

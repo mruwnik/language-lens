@@ -38,9 +38,10 @@ export const replaceNode = (node, originalText, html, knownWords) => {
         .forEach(([en, {native, ruby}]) => {
             const translationItem = document.createElement('div');
             translationItem.className = 'translation-item';
+            const item = ruby ? `<ruby>${native}<rt>${ruby}</rt></ruby>` : native;
             translationItem.innerHTML = `
                 <span class="translation-text">${en}</span>
-                <span class="translation-reading">${native}</span>
+                <span class="translation-reading">${item}</span>
                 <span class="speak-icon" data-text="${native}">
                     ${SPEAKER_ICON}
                 </span>

@@ -1,7 +1,8 @@
 import { debounce } from '../lib/utils.js';
-import { containsAnyWord } from '../lib/textProcessing.js';
+import { containsAnyWord, isKanji } from '../lib/textProcessing.js';
 
 const DEBOUNCE_MS = 1000;
+const MIN_KANJI_VIEW_COUNT = 35;
 
 // Debounced storage update
 const updateStorage = debounce(async (key, value) => {
@@ -17,6 +18,27 @@ export class TranslationState {
         this.currentLang = 'ja';
         this.knownWords = new Map();
         this.seenKanjiThisPage = new Set();
+        this.seenWordsThisPage = new Set();
+    }
+
+    updateWordView(word, en) {
+        if (!this.seenWordsThisPage.has(en)) {
+            word.viewCount = (word.viewCount || 0) + 1;
+            if (word.ruby && word.viewCount > MIN_KANJI_VIEW_COUNT && word.useKanji === undefined) {
+                word.useKanji = true;
+            }
+            this.seenWordsThisPage.add(en);
+
+            // Update kanji counts if word has kanji
+            if (word.native) {
+                [...word.native].forEach(char => {
+                    if (isKanji(char)) {
+                        this.updateKanjiFrequency(word, char);
+                    }
+                });
+            }
+        }
+        return word.viewCount;
     }
 
     updateKanjiFrequency(word, kanji) {
@@ -27,15 +49,7 @@ export class TranslationState {
             word.kanjiViewCounts[kanji] = (word.kanjiViewCounts[kanji] ?? 0) + 1;
             this.seenKanjiThisPage.add(kanji);
             
-            // Get current data first to preserve settings
-            browser.storage.local.get(this.currentLang).then(data => {
-                const currentData = data[this.currentLang] || {};
-                const wordData = Object.fromEntries(this.knownWords);
-                updateStorage(this.currentLang, {
-                    ...currentData,
-                    words: wordData
-                });
-            }).catch(err => {
+            this.saveToStorage().catch(err => {
                 console.error('Failed to update kanji frequency:', err);
             });
         }
@@ -51,6 +65,21 @@ export class TranslationState {
         return containsAnyWord(text, words);
     }
 
+    async saveToStorage() {
+        try {
+            const { [this.currentLang]: langData } = await browser.storage.local.get(this.currentLang);
+            const storageUpdate = {
+                [this.currentLang]: {
+                    ...langData,
+                    words: Object.fromEntries(this.knownWords)
+                }
+            };
+            await updateStorage(this.currentLang, storageUpdate[this.currentLang]);
+        } catch (err) {
+            console.error('Failed to save to storage:', err);
+        }
+    }
+
     async loadFromStorage() {
         try {
             const { lastLanguage, ...langData } = 
@@ -58,6 +87,7 @@ export class TranslationState {
             
             this.currentLang = lastLanguage ?? 'ja';
             this.seenKanjiThisPage.clear();
+            this.seenWordsThisPage.clear();
             
             const data = langData[this.currentLang] ?? { words: {}, settings: {} };
             this.knownWords = new Map(
@@ -70,6 +100,7 @@ export class TranslationState {
             this.currentLang = 'ja';
             this.knownWords.clear();
             this.seenKanjiThisPage.clear();
+            this.seenWordsThisPage.clear();
         }
     }
 } 
