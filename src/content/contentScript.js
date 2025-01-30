@@ -145,9 +145,9 @@ const translateBatch = async (state, batch) => {
 
                 replaceNode(
                     node,
+                    original,
                     translated,
-                    translationData.length > 0 ? translationData : [{text: original, reading: original}],
-                    original
+                    state.knownWords,
                 );
             }
         });
@@ -296,8 +296,6 @@ async function translateText(sentences, knownWords) {
 
     // Only translate sentences containing known words
     const englishWords = wordArray.map(w => w.en);
-    console.log('englishWords', englishWords);
-    console.log('sentences', sentences);
     const relevantSentences = sentences.filter(s => 
         containsAnyWord(s.text, englishWords)
     );

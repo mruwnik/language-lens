@@ -1,18 +1,13 @@
 import { SPEAKER_ICON } from './styles.js';
 import { isVisible } from './utils.js';
-
+import { extractWords } from '../lib/textProcessing.js';
 // Cache for processed nodes
 export const processedNodes = new WeakSet();
 
 // Simplify replaceNode function
-export const replaceNode = (node, html, translations, originalText) => {
-    if (!node?.parentNode) return;
+export const replaceNode = (node, originalText, html, knownWords) => {
+    if (!node?.parentNode || originalText === html) return;
 
-    // Skip if there are no real translations (where text equals reading)
-    const hasRealTranslations = translations.some(({text, reading}) => text !== reading);
-    if (!hasRealTranslations) {
-        return;
-    }
 
     const span = document.createElement('span');
     span.className = 'jp-word';
@@ -38,15 +33,15 @@ export const replaceNode = (node, html, translations, originalText) => {
     translationsList.className = 'tooltip-translations';
     
     // Only show translations that are different from their reading
-    translations
-        .filter(({text, reading}) => text !== reading)
-        .forEach(({text, reading}) => {
+    const words = extractWords(originalText).map(word => word.toLowerCase());
+    [...knownWords.entries()].filter(([en, word]) => words.includes(en.toLowerCase()))
+        .forEach(([en, {native, ruby}]) => {
             const translationItem = document.createElement('div');
             translationItem.className = 'translation-item';
             translationItem.innerHTML = `
-                <span class="translation-text">${text}</span>
-                <span class="translation-reading">${reading}</span>
-                <span class="speak-icon" data-text="${reading}">
+                <span class="translation-text">${en}</span>
+                <span class="translation-reading">${native}</span>
+                <span class="speak-icon" data-text="${native}">
                     ${SPEAKER_ICON}
                 </span>
             `;
