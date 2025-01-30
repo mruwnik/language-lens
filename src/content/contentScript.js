@@ -7,6 +7,9 @@ const SPEAKER_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" style="dis
     <path fill="currentColor" d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z"/>
 </svg>`;
 
+// Sentence splitting regex that handles common sentence endings
+const SENTENCE_REGEX = /([.!?。！？\n]+\s*)/g;
+
 // Update TOOLTIP_STYLES
 const TOOLTIP_STYLES = `
 .jp-word {
@@ -64,6 +67,48 @@ const processedNodes = new WeakSet();
 const isKanji = char => /[\u4e00-\u9faf]/.test(char);
 const normalizeText = text => text.toLowerCase().trim();
 const extractWords = text => text.match(/\b\w+\b/g) ?? [];
+
+// Check if text contains any of the known words
+const containsKnownWord = (text, knownWords) => {
+    const normalized = text.toLowerCase();
+    return knownWords.some(([en, _]) => {
+        const wordRegex = new RegExp(`\\b${en}\\b`, 'i');
+        return wordRegex.test(normalized);
+    });
+};
+
+// Split text into sentences while preserving the separators
+const splitIntoSentences = (text) => {
+    const sentences = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = SENTENCE_REGEX.exec(text)) !== null) {
+        const sentence = text.slice(lastIndex, match.index + match[0].length).trim();
+        if (sentence) sentences.push(sentence);
+        lastIndex = match.index + match[0].length;
+    }
+
+    // Add remaining text if any
+    const remaining = text.slice(lastIndex).trim();
+    if (remaining) sentences.push(remaining);
+
+    return sentences;
+};
+
+// Wrap sentences with XML tags for tracking
+const wrapSentence = (sentence, id) => 
+    `<s id="${id}">${sentence}</s>`;
+
+const unwrapSentences = (text) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, 'text/html');
+    const sentences = {};
+    doc.querySelectorAll('s').forEach(s => {
+        sentences[s.getAttribute('id')] = s.textContent;
+    });
+    return sentences;
+};
 
 // Debounced storage update
 const debounce = (fn, ms) => {
@@ -201,16 +246,36 @@ const replaceNode = (node, html, translations) => {
 };
 
 // Translation functions
-const translateText = async (state, text) => {
-    // Filter known words to only those that appear in the text
-    const relevantWords = [...state.knownWords.entries()]
-        .filter(([en, _]) => text.toLowerCase().includes(en.toLowerCase()))
+const translateText = async (state, sentences) => {
+    // Get all known words first
+    const knownWordEntries = [...state.knownWords.entries()];
+    
+    // Filter sentences to only those containing known words
+    const relevantSentences = sentences.filter(s => 
+        containsKnownWord(s.text, knownWordEntries)
+    );
+
+    // If no sentences contain known words, return original texts
+    if (relevantSentences.length === 0) {
+        return sentences.map(s => s.text);
+    }
+
+    // Filter known words to only those that appear in the relevant sentences
+    const relevantWords = knownWordEntries
+        .filter(([en, _]) => 
+            relevantSentences.some(s => 
+                s.text.toLowerCase().includes(en.toLowerCase())
+            )
+        )
         .map(([en, data]) => ({ en, ...data }));
+
+    // Create message-safe sentence objects (without DOM nodes)
+    const messageSafeSentences = relevantSentences.map(({ id, text }) => ({ id, text }));
 
     const message = {
         type: 'PARTIAL_TRANSLATE',
         payload: {
-            originalText: text,
+            sentences: messageSafeSentences,
             knownWords: relevantWords,
             addFurigana: true
         }
@@ -218,42 +283,18 @@ const translateText = async (state, text) => {
 
     try {
         const response = await browser.runtime.sendMessage(message);
-        if (!response?.translatedText) return text;
+        if (!response?.translations) return sentences.map(s => s.text);
 
-        // Process each word with its proper furigana
-        return relevantWords.reduce((acc, { en, ...word }) => {  // Keep the English word for hover
-            if (!word.native || !word.ruby || state.currentLang !== 'ja') {
-                return acc.replace(word.native, word.native ?? '');
-            }
+        // Create a map of translations for easy lookup
+        const translationMap = new Map(
+            response.translations.map(t => [t.id, t.text])
+        );
 
-            // Check if any kanji in the word needs furigana
-            const needsFurigana = [...word.native].some(char => {
-                if (!isKanji(char)) return false;
-                const frequency = state.getKanjiFrequency(word, char);
-                return frequency < KANJI_FAMILIARITY_THRESHOLD;
-            });
-
-            if (!needsFurigana) {
-                return acc.replace(word.native, word.native);
-            }
-
-            // Update frequency for any kanji characters
-            [...word.native].forEach(char => {
-                if (isKanji(char)) {
-                    state.updateKanjiFrequency(word, char);
-                }
-            });
-
-            // Create hover text with both English and Japanese readings
-            const hoverText = `${en} (${word.ruby})`;
-
-            // Apply furigana to the whole phrase with hover
-            const rubyHtml = `<ruby>${word.native}<rt>${word.ruby}</rt></ruby>`;
-            return acc.replace(word.native, rubyHtml);
-        }, response.translatedText);
+        // Return original text for sentences without translations
+        return sentences.map(s => translationMap.get(s.id) || s.text);
     } catch (err) {
         console.error('Translation failed:', err);
-        return text;
+        return sentences.map(s => s.text);
     }
 };
 
@@ -298,57 +339,110 @@ const collectTextNodes = (state, node, nodes = []) => {
 
 const batchNodes = (nodes, maxSize = BATCH_SIZE) => {
     const batches = [];
-    let currentBatch = [];
-    let currentSize = 0;
-    
+    let sentenceId = 0;
+
+    // Track unique sentences while preserving node mapping
+    const uniqueSentences = new Map(); // text -> { id, nodes: Set(nodes) }
+
     for (const node of nodes) {
-        if (currentSize + node.text.length > maxSize && currentBatch.length > 0) {
-            batches.push(currentBatch);
-            currentBatch = [];
-            currentSize = 0;
+        const sentences = splitIntoSentences(node.text);
+        
+        sentences.forEach(s => {
+            const text = s.trim();
+            if (!text) return;
+
+            let sentenceData = uniqueSentences.get(text);
+            if (!sentenceData) {
+                const id = `s${sentenceId++}`;
+                sentenceData = { id, text, nodes: new Set() };
+                uniqueSentences.set(text, sentenceData);
+            }
+            sentenceData.nodes.add(node.node);
+        });
+    }
+
+    // Convert unique sentences to array format
+    const sentences = Array.from(uniqueSentences.values()).map(({ id, text, nodes }) => ({
+        id,
+        text,
+        nodes: Array.from(nodes)
+    }));
+
+    // Batch the unique sentences
+    let currentBatchSize = 0;
+    let currentBatchSentences = [];
+
+    sentences.forEach(sentence => {
+        const size = sentence.text.length;
+        if (currentBatchSize + size > maxSize && currentBatchSentences.length > 0) {
+            batches.push({ 
+                nodes: Array.from(new Set(currentBatchSentences.flatMap(s => s.nodes))),
+                sentences: currentBatchSentences 
+            });
+            currentBatchSentences = [];
+            currentBatchSize = 0;
         }
-        currentBatch.push(node);
-        currentSize += node.text.length;
+        currentBatchSentences.push(sentence);
+        currentBatchSize += size;
+    });
+
+    if (currentBatchSentences.length > 0) {
+        batches.push({ 
+            nodes: Array.from(new Set(currentBatchSentences.flatMap(s => s.nodes))),
+            sentences: currentBatchSentences 
+        });
     }
-    
-    if (currentBatch.length > 0) {
-        batches.push(currentBatch);
-    }
-    
+
     return batches;
 };
 
-const translateBatch = async (state, nodes) => {
-    const combinedText = nodes.map(n => n.text).join('\n');
-    const translatedText = await translateText(state, combinedText);
-    const translations = translatedText.split('\n');
-    
-    nodes.forEach((node, i) => {
-        if (translations[i] && translations[i] !== node.text) {
-            // Find English words that were translated in this text
-            const matchedWords = [...state.knownWords.entries()]
-                .filter(([en, word]) => {
-                    // Only include words that have valid translations
-                    if (!word.native || !word.ruby) return false;
-                    const wordRegex = new RegExp(`\\b${en}\\b`, 'i');
-                    return wordRegex.test(node.text);
-                });
-            
-            // Create structured translation data
-            const translationData = matchedWords
-                .filter(([_, word]) => word.native && word.ruby)
-                .map(([en, word]) => ({
-                    text: en,
-                    reading: word.ruby
-                }));
-            
-            replaceNode(
-                node.node, 
-                translations[i], 
-                translationData.length > 0 ? translationData : [{text: node.text, reading: node.text}]
-            );
-        }
+const translateBatch = async (state, batch) => {
+    const { sentences } = batch;
+    const translatedTexts = await translateText(state, sentences);
+
+    // Group sentences by node, handling multiple nodes per sentence
+    const nodeMap = new Map();
+    sentences.forEach((s, i) => {
+        const translatedText = translatedTexts[i] || s.text;
+        s.nodes.forEach(node => {
+            if (!nodeMap.has(node)) {
+                nodeMap.set(node, []);
+            }
+            nodeMap.get(node).push({
+                original: s.text,
+                translated: translatedText
+            });
+        });
     });
+
+    // Replace text in each node
+    for (const [node, translations] of nodeMap.entries()) {
+        translations.forEach(({ original, translated }) => {
+            if (translated !== original) {
+                // Find English words that were translated in this text
+                const matchedWords = [...state.knownWords.entries()]
+                    .filter(([en, word]) => {
+                        if (!word.native || !word.ruby) return false;
+                        const wordRegex = new RegExp(`\\b${en}\\b`, 'i');
+                        return wordRegex.test(original);
+                    });
+
+                // Create structured translation data
+                const translationData = matchedWords
+                    .filter(([_, word]) => word.native && word.ruby)
+                    .map(([en, word]) => ({
+                        text: en,
+                        reading: word.ruby
+                    }));
+
+                replaceNode(
+                    node,
+                    translated,
+                    translationData.length > 0 ? translationData : [{text: original, reading: original}]
+                );
+            }
+        });
+    }
 };
 
 const processBatches = async (state, batches) => {

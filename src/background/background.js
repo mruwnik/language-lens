@@ -63,27 +63,42 @@ function debounce(fn, ms) {
 // Update the message listener to use the new settings
 browser.runtime.onMessage.addListener(async (request, sender) => {
   if (request.type === "PARTIAL_TRANSLATE") {
-    const { originalText, knownWords } = request.payload;
+    const { sentences, knownWords } = request.payload;
 
     // Filter to relevant words first, using word boundaries
     const relevantWords = knownWords.filter(word => {
       const wordRegex = new RegExp(`\\b${word.en}\\b`, 'i');
-      return wordRegex.test(originalText);
+      return sentences.some(s => wordRegex.test(s.text));
     });
 
-    // Create cache key using only relevant words
-    const cacheKey = makeHash(
-      originalText + 
-      relevantWords
-        .map(w => `${w.en}:${w.useKanji ? w.native : w.ruby}`)
-        .sort()
-        .join(',')
-    );
+    // Sort words for consistent cache keys
+    const sortedWords = relevantWords
+      .map(w => w.en)
+      .sort()
+      .join(',');
 
-    // Check cache and expiry
-    const cached = translationCache[cacheKey];
-    if (cached && Date.now() - cached.timestamp < CACHE_EXPIRY_MS) {
-      return Promise.resolve({ translatedText: cached.text });
+    // Check cache for each sentence
+    const now = Date.now();
+    const uncachedSentences = [];
+    const translations = [];
+
+    for (const sentence of sentences) {
+      const cacheKey = makeHash(sentence.text + sortedWords);
+      const cached = translationCache[cacheKey];
+
+      if (cached && now - cached.timestamp < CACHE_EXPIRY_MS) {
+        translations.push({
+          id: sentence.id,
+          text: cached.text
+        });
+      } else {
+        uncachedSentences.push(sentence);
+      }
+    }
+
+    // If all sentences were cached, return immediately
+    if (uncachedSentences.length === 0) {
+      return Promise.resolve({ translations });
     }
 
     try {
@@ -92,24 +107,41 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
       
       if (!settings.apiKey) {
         console.warn(`No API key found for provider: ${settings.provider}`);
-        return { translatedText: originalText };
+        return { 
+          translations: [
+            ...translations,
+            ...uncachedSentences.map(s => ({ id: s.id, text: s.text }))
+          ]
+        };
       }
 
-      // Call selected provider with model
+      // Call selected provider with model for uncached sentences
       const translated = await callLlmProvider(
-        originalText, 
+        uncachedSentences.map(s => s.text).join('\n'), 
         relevantWords, 
         settings.apiKey, 
         settings.provider,
         settings.model
       );
 
-      // Save to cache with timestamp
-      const now = Date.now();
-      translationCache[cacheKey] = {
-        text: translated,
-        timestamp: now
-      };
+      // Split translated text back into sentences
+      const translatedParts = translated.split(/\n/).filter(Boolean);
+      
+      // Cache each newly translated sentence
+      uncachedSentences.forEach((sentence, i) => {
+        const translatedText = translatedParts[i]?.trim() || sentence.text;
+        const cacheKey = makeHash(sentence.text + sortedWords);
+        
+        translationCache[cacheKey] = {
+          text: translatedText,
+          timestamp: now
+        };
+
+        translations.push({
+          id: sentence.id,
+          text: translatedText
+        });
+      });
 
       // If cache is too large, remove oldest entries
       const entries = Object.entries(translationCache);
@@ -124,10 +156,15 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
       }
 
       saveCache();
-      return { translatedText: translated };
+      return { translations };
     } catch (err) {
       console.error("Error in PARTIAL_TRANSLATE:", err);
-      return { translatedText: originalText };
+      return { 
+        translations: [
+          ...translations,
+          ...uncachedSentences.map(s => ({ id: s.id, text: s.text }))
+        ]
+      };
     }
   }
 });

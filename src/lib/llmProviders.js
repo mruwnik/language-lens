@@ -143,9 +143,10 @@ async function callGoogle(prompt, systemPrompt, apiKey, model = 'gemini-pro') {
  * Builds a prompt instructing the LLM to replace only the specified words
  */
 function buildPartialTranslationPrompt(text, relevantWords) {
-  const wordList = relevantWords.map(word => 
-    `${word.en} -> ${word.useKanji ? word.native : word.ruby}`
-  ).join('\n');
+  const wordList = relevantWords.map(word => [word.en, word.useKanji ? word.native : (word.ruby || word.native)])
+                                .filter(word => word[0] && word[1])
+                                .map(word => `${word[0]} -> ${word[1]}`)
+                                .join('\n');
 
   return `Translate this text by replacing the specified source words with their target language equivalents: "${text}"
 
