@@ -98,9 +98,17 @@ class TranslationState {
             word.kanjiViewCounts[kanji] = (word.kanjiViewCounts[kanji] ?? 0) + 1;
             this.seenKanjiThisPage.add(kanji);
             
-            // Update storage with modified word data
-            const wordData = Object.fromEntries(this.knownWords);
-            updateStorage(this.currentLang, { words: wordData, settings: {} });
+            // Get current data first to preserve settings
+            browser.storage.local.get(this.currentLang).then(data => {
+                const currentData = data[this.currentLang] || {};
+                const wordData = Object.fromEntries(this.knownWords);
+                updateStorage(this.currentLang, {
+                    ...currentData,
+                    words: wordData
+                });
+            }).catch(err => {
+                console.error('Failed to update kanji frequency:', err);
+            });
         }
         return word.kanjiViewCounts?.[kanji] ?? 0;
     }

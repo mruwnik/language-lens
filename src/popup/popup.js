@@ -1,17 +1,14 @@
 // popup.js
 
 import { getDisplayText, formatTooltip, speakWord } from '../lib/wordDisplay.js';
-import {
-    japaneseDictionary,
-    chineseDictionary,
-    koreanDictionary,
-    spanishDictionary,
-    frenchDictionary,
-    germanDictionary,
-    polishDictionary,
-    welshDictionary,
-    defaultDictionaries
-} from '../lib/defaultDictionaries.js';
+import { defaultDictionaries } from '../lib/defaultDictionaries.js';
+import { 
+  loadLlmSettings, 
+  saveLlmSettings, 
+  getAvailableModels, 
+  DEFAULT_MODELS 
+} from '../lib/settings.js';
+import { loadTokenCounts, getTodayTokenUsage, getTokenUsage } from '../lib/tokenCounter.js';
 
 console.log('Starting popup.js');
 
@@ -324,101 +321,296 @@ export const updateFormPlaceholders = (currentLang, newTranslation, newFurigana)
     form.style.gridTemplateColumns = isJapanese ? "repeat(4, 1fr)" : "repeat(3, 1fr)";
 };
 
+// Update model options based on selected provider
+async function updateModelOptions(provider) {
+  const modelSelect = document.getElementById('llmModel');
+  modelSelect.innerHTML = ''; // Clear existing options
+
+  const models = await getAvailableModels(provider);
+  models.forEach(model => {
+    const option = document.createElement('option');
+    option.value = model;
+    option.textContent = model;
+    modelSelect.appendChild(option);
+  });
+
+  // Select default model for provider
+  modelSelect.value = DEFAULT_MODELS[provider];
+}
+
+// Load and save LLM settings
+async function initializeLlmSettings() {
+  const settings = await loadLlmSettings();
+  
+  const providerSelect = document.getElementById('llmProvider');
+  const apiKeyInput = document.getElementById('apiKey');
+  
+  providerSelect.value = settings.provider;
+  apiKeyInput.value = settings.apiKey || '';
+  
+  await updateModelOptions(settings.provider);
+  
+  if (settings.model) {
+    document.getElementById('llmModel').value = settings.model;
+  }
+}
+
+async function saveLlmSettingsHandler() {
+  const provider = document.getElementById('llmProvider').value;
+  const model = document.getElementById('llmModel').value;
+  const apiKey = document.getElementById('apiKey').value.trim();
+
+  if (!apiKey) {
+    alert(MESSAGES.API_KEY_REQUIRED);
+    return;
+  }
+
+  try {
+    await saveLlmSettings({ provider, model, apiKey });
+    alert('Settings saved successfully!');
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    alert('Error saving settings. Please try again.');
+  }
+}
+
+/**
+ * Format number with commas
+ */
+function formatNumber(num) {
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/**
+ * Get dates for the last n days
+ */
+function getLastNDays(n) {
+  const dates = [];
+  const today = new Date();
+  
+  for (let i = n - 1; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    dates.push(date.toISOString().split('T')[0]);
+  }
+  
+  return dates;
+}
+
+/**
+ * Format date for display
+ */
+function formatDate(dateStr) {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/**
+ * Update token usage histogram
+ */
+async function updateTokenHistogram(model, days = 7) {
+  const histogram = document.querySelector('.token-histogram');
+  if (!histogram) return;
+
+  // Clear existing content
+  histogram.innerHTML = '';
+  
+  // Create tooltip
+  const tooltip = document.createElement('div');
+  tooltip.className = 'histogram-tooltip';
+  histogram.appendChild(tooltip);
+
+  // Get dates and usage data
+  const dates = getLastNDays(days);
+  const counts = await loadTokenCounts();
+  const modelData = counts[model] || { input: {}, output: {} };
+
+  // Calculate max value for scaling
+  let maxTokens = 0;
+  dates.forEach(date => {
+    const inputTokens = modelData.input[date] || 0;
+    const outputTokens = modelData.output[date] || 0;
+    maxTokens = Math.max(maxTokens, inputTokens, outputTokens);
+  });
+
+  // Calculate totals
+  let totalInput = 0;
+  let totalOutput = 0;
+
+  // Create bars
+  dates.forEach(date => {
+    const dayDiv = document.createElement('div');
+    dayDiv.className = 'histogram-day';
+
+    const inputTokens = modelData.input[date] || 0;
+    const outputTokens = modelData.output[date] || 0;
+    totalInput += inputTokens;
+    totalOutput += outputTokens;
+
+    // Input bar
+    const inputBar = document.createElement('div');
+    inputBar.className = 'histogram-bar input';
+    inputBar.style.height = maxTokens ? `${(inputTokens / maxTokens) * 150}px` : '0';
+    
+    // Output bar
+    const outputBar = document.createElement('div');
+    outputBar.className = 'histogram-bar output';
+    outputBar.style.height = maxTokens ? `${(outputTokens / maxTokens) * 150}px` : '0';
+
+    // Date label
+    const label = document.createElement('div');
+    label.className = 'histogram-label';
+    label.textContent = formatDate(date);
+
+    // Add hover effect
+    [inputBar, outputBar].forEach(bar => {
+      bar.addEventListener('mouseover', (e) => {
+        tooltip.style.display = 'block';
+        tooltip.style.left = `${e.pageX - histogram.getBoundingClientRect().left}px`;
+        tooltip.style.top = `${e.pageY - histogram.getBoundingClientRect().top - 30}px`;
+        tooltip.textContent = `${formatDate(date)}
+Input: ${formatNumber(inputTokens)}
+Output: ${formatNumber(outputTokens)}`;
+      });
+
+      bar.addEventListener('mouseout', () => {
+        tooltip.style.display = 'none';
+      });
+    });
+
+    dayDiv.appendChild(outputBar);
+    dayDiv.appendChild(inputBar);
+    dayDiv.appendChild(label);
+    histogram.appendChild(dayDiv);
+  });
+
+  // Update totals
+  document.getElementById('totalInput').textContent = formatNumber(totalInput);
+  document.getElementById('totalOutput').textContent = formatNumber(totalOutput);
+}
+
 // Main setup
 document.addEventListener("DOMContentLoaded", async () => {
-    const elements = {
-        apiKeyInput: document.getElementById("apiKey"),
-        saveKeyBtn: document.getElementById("saveKey"),
-        wordList: document.getElementById("wordList"),
-        newEnglish: document.getElementById("newEnglish"),
-        newTranslation: document.getElementById("newTranslation"),
-        newFurigana: document.getElementById("newFurigana"),
-        addWordBtn: document.getElementById("addWord"),
-        langSelect: document.getElementById("targetLang"),
-        wordSearch: document.getElementById("wordSearch")
-    };
+  const elements = {
+    wordList: document.getElementById("wordList"),
+    newEnglish: document.getElementById("newEnglish"),
+    newTranslation: document.getElementById("newTranslation"),
+    newFurigana: document.getElementById("newFurigana"),
+    addWordBtn: document.getElementById("addWord"),
+    langSelect: document.getElementById("targetLang"),
+    wordSearch: document.getElementById("wordSearch"),
+    llmProvider: document.getElementById("llmProvider"),
+    llmModel: document.getElementById("llmModel"),
+    saveSettingsBtn: document.getElementById("saveSettings"),
+    timeRange: document.getElementById("timeRange")
+  };
 
-    // Load existing data
-    const data = await browser.storage.local.get(["openaiApiKey", "lastLanguage"]);
-    
-    if (data.openaiApiKey && elements.apiKeyInput) {
-        elements.apiKeyInput.value = data.openaiApiKey;
+  // Initialize LLM settings
+  const settings = await loadLlmSettings();
+  await initializeLlmSettings();
+
+  // Provider change handler
+  elements.llmProvider.addEventListener('change', async () => {
+    await updateModelOptions(elements.llmProvider.value);
+    const model = elements.llmModel.value;
+    if (model) {
+      updateTokenHistogram(model, parseInt(elements.timeRange?.value || 7));
     }
+  });
 
-    // Set current language (default to Japanese if not set)
-    let currentLang = data.lastLanguage || "ja";
-    elements.langSelect.value = currentLang;
-    
-    // Initialize dictionary if needed
+  // Save settings handler
+  elements.saveSettingsBtn.addEventListener('click', saveLlmSettingsHandler);
+
+  // Load existing data
+  const data = await browser.storage.local.get(["openaiApiKey", "lastLanguage"]);
+  
+  if (data.openaiApiKey && elements.apiKeyInput) {
+    elements.apiKeyInput.value = data.openaiApiKey;
+  }
+
+  // Set current language (default to Japanese if not set)
+  let currentLang = data.lastLanguage || "ja";
+  elements.langSelect.value = currentLang;
+  
+  // Initialize dictionary if needed
+  const langData = await browser.storage.local.get(currentLang);
+  if (!langData[currentLang]) {
+    // Initialize with default dictionary for the current language
+    const defaultDict = defaultDictionaries[currentLang];
+    if (defaultDict) {
+      await browser.storage.local.set({ 
+        lastLanguage: currentLang,
+        [currentLang]: defaultDict
+      });
+    }
+  }
+
+  // Initialize or load current language data
+  let currentLangData = await loadLanguageData(currentLang);
+
+  // Language change handler
+  elements.langSelect.addEventListener("change", async () => {
+    const newLang = elements.langSelect.value.trim().toLowerCase();
+    await browser.storage.local.set({ lastLanguage: newLang });
+    currentLang = newLang;
+
+    // Check and initialize dictionary if needed
     const langData = await browser.storage.local.get(currentLang);
     if (!langData[currentLang]) {
-        // Initialize with default dictionary for the current language
-        const defaultDict = defaultDictionaries[currentLang];
-        if (defaultDict) {
-            await browser.storage.local.set({ 
-                lastLanguage: currentLang,
-                [currentLang]: defaultDict
-            });
-        }
+      const defaultDict = defaultDictionaries[currentLang];
+      if (defaultDict) {
+        await browser.storage.local.set({ 
+          [currentLang]: {
+            words: { ...defaultDict.words },
+            settings: { ...defaultDict.settings }
+          }
+        });
+      }
     }
 
-    // Initialize or load current language data
-    let currentLangData = await loadLanguageData(currentLang);
-
-    // Language change handler
-    elements.langSelect.addEventListener("change", async () => {
-        const newLang = elements.langSelect.value.trim().toLowerCase();
-        await browser.storage.local.set({ lastLanguage: newLang });
-        currentLang = newLang;
-
-        // Check and initialize dictionary if needed
-        const langData = await browser.storage.local.get(currentLang);
-        if (!langData[currentLang]) {
-            const defaultDict = defaultDictionaries[currentLang];
-            if (defaultDict) {
-                await browser.storage.local.set({ 
-                    [currentLang]: {
-                        words: { ...defaultDict.words },
-                        settings: { ...defaultDict.settings }
-                    }
-                });
-            }
-        }
-
-        currentLangData = await loadLanguageData(currentLang);
-        updateFormPlaceholders(currentLang, elements.newTranslation, elements.newFurigana);
-        renderWords(currentLang, currentLangData);
-    });
-
-    // Save API key
-    elements.saveKeyBtn.addEventListener("click", async () => {
-        const key = elements.apiKeyInput.value.trim();
-        if (!key) {
-            alert(MESSAGES.API_KEY_REQUIRED);
-            return;
-        }
-        try {
-            await browser.storage.local.set({ openaiApiKey: key });
-            alert(MESSAGES.API_KEY_SAVED);
-        } catch (error) {
-            console.error('Error saving API key:', error);
-            alert(MESSAGES.API_KEY_ERROR);
-        }
-    });
-
-    // Add search functionality
-    elements.wordSearch.addEventListener('input', (e) => {
-        renderWords(currentLang, currentLangData, e.target.value);
-    });
-
-    // Add new word
-    elements.addWordBtn.addEventListener("click", () => 
-        handleAddWord(currentLang, currentLangData, elements)
-    );
-
-    // Initial setup
+    currentLangData = await loadLanguageData(currentLang);
     updateFormPlaceholders(currentLang, elements.newTranslation, elements.newFurigana);
     renderWords(currentLang, currentLangData);
+  });
+
+  // Add search functionality
+  elements.wordSearch.addEventListener('input', (e) => {
+    renderWords(currentLang, currentLangData, e.target.value);
+  });
+
+  // Add new word
+  elements.addWordBtn.addEventListener("click", () => 
+    handleAddWord(currentLang, currentLangData, elements)
+  );
+
+  // Time range change handler
+  if (elements.timeRange) {
+    elements.timeRange.addEventListener('change', () => {
+      const model = elements.llmModel.value;
+      if (model) {
+        updateTokenHistogram(model, parseInt(elements.timeRange.value));
+      }
+    });
+  }
+
+  // Model change handler
+  if (elements.llmModel) {
+    elements.llmModel.addEventListener('change', () => {
+      const model = elements.llmModel.value;
+      if (model) {
+        updateTokenHistogram(model, parseInt(elements.timeRange?.value || 7));
+      }
+    });
+  }
+
+  // Initial histogram update - wait for settings to be loaded
+  if (settings?.model) {
+    await updateTokenHistogram(settings.model, 7);
+  }
+
+  // Initial setup
+  updateFormPlaceholders(currentLang, elements.newTranslation, elements.newFurigana);
+  renderWords(currentLang, currentLangData);
 });
 
 // Voice initialization

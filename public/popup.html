@@ -257,15 +257,215 @@
       border-color: #80bdff;
       box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
     }
+    .llm-settings {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .setting-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .setting-group label {
+      font-size: 14px;
+      color: #666;
+    }
+    .setting-select {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      background: white;
+    }
+    .setting-select:focus {
+      outline: none;
+      border-color: #80bdff;
+      box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+    }
+    #saveSettings {
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      align-self: flex-start;
+    }
+    #saveSettings:hover {
+      background: #218838;
+    }
+    .token-usage {
+      margin-top: 12px;
+    }
+    .token-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .token-stats {
+      display: flex;
+      gap: 12px;
+    }
+    .stat-item {
+      display: flex;
+      gap: 4px;
+    }
+    .token-histogram {
+      height: 200px;
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      padding: 12px 0;
+      border-bottom: 1px solid #eee;
+      position: relative;
+      background: white;
+    }
+    .histogram-day {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      min-width: 20px;
+    }
+    .histogram-bar {
+      width: 100%;
+      border-radius: 2px 2px 0 0;
+      transition: height 0.3s ease;
+    }
+    .histogram-bar.input {
+      background: #007bff;
+      opacity: 0.7;
+    }
+    .histogram-bar.output {
+      background: #28a745;
+      opacity: 0.7;
+    }
+    .histogram-label {
+      font-size: 10px;
+      color: #666;
+      transform: rotate(-45deg);
+      transform-origin: right top;
+      margin-top: 8px;
+      white-space: nowrap;
+    }
+    .histogram-tooltip {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 100;
+      display: none;
+      white-space: pre-line;
+    }
+    .token-legend {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+    .legend-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .legend-color {
+      width: 20px;
+      height: 10px;
+      border-radius: 4px;
+      margin-bottom: 4px;
+    }
+    .input-color {
+      background: #007bff;
+    }
+    .output-color {
+      background: #28a745;
+    }
+    details summary {
+      cursor: pointer;
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      color: #333;
+      user-select: none;
+    }
+    
+    details summary:hover {
+      color: #007bff;
+    }
+
+    details[open] summary {
+      margin-bottom: 16px;
+    }
   </style>
 </head>
 <body>
   <div class="section api-section">
     <div>
-      <h2>OpenAI API Key</h2>
-      <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+      <h2>LLM Settings</h2>
+      <div class="llm-settings">
+        <div class="setting-group">
+          <label for="llmProvider">Provider</label>
+          <select id="llmProvider" class="setting-select">
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openwebui">OpenWebUI (Local)</option>
+            <option value="google">Google (Gemini)</option>
+          </select>
+        </div>
+        
+        <div class="setting-group">
+          <label for="llmModel">Model</label>
+          <select id="llmModel" class="setting-select">
+            <!-- Will be populated based on provider -->
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <label for="apiKey">API Key</label>
+          <input type="password" id="apiKey" placeholder="Enter API key..." autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
     </div>
-    <button id="saveKey">Save Key</button>
+    <button id="saveSettings">Save Settings</button>
+  </div>
+
+  <div class="section">
+    <details>
+      <summary>Token Usage</summary>
+      <div class="token-usage">
+        <div class="token-header">
+          <select id="timeRange" class="setting-select">
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+          <div class="token-stats">
+            <span class="stat-item">Input: <span id="totalInput">0</span></span>
+            <span class="stat-item">Output: <span id="totalOutput">0</span></span>
+          </div>
+        </div>
+        <div class="token-histogram">
+          <!-- Bars will be added here -->
+        </div>
+        <div class="token-legend">
+          <div class="legend-item">
+            <span class="legend-color input-color"></span>
+            <span>Input Tokens</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color output-color"></span>
+            <span>Output Tokens</span>
+          </div>
+        </div>
+      </div>
+    </details>
   </div>
 
   <div class="section lang-section">
