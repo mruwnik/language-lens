@@ -61,15 +61,16 @@ export const clearInputs = (...inputs) => inputs.forEach(input => input.value = 
 // Storage functions
 export const loadLanguageData = async (lang) => {
     const data = await browser.storage.local.get(lang);
-    
     if (!data[lang]) {
         const defaultDict = defaultDictionaries[lang];
         if (defaultDict) {
-            return JSON.parse(JSON.stringify(defaultDict));
+            return {
+                words: { ...defaultDict.words },
+                settings: { ...defaultDict.settings }
+            };
         }
-        return { words: {}, settings: {} };
+        return { words: {}, settings: { voice: `${lang}-${lang.toUpperCase()}` } };
     }
-
     return data[lang];
 };
 
@@ -215,7 +216,6 @@ export const renderWords = (currentLang, currentLangData, searchTerm = '') => {
 
     updateHeader(currentLang, currentLangData, wordList);
     
-    const showKanji = currentLangData.settings?.showKanji ?? true;
     wordList.innerHTML = sortedWords.map(([key, data]) => {
         const displayText = getDisplayText(data, currentLangData.settings);
         const useKanji = currentLang === 'ja' && data.ruby;
@@ -262,7 +262,8 @@ export const renderWords = (currentLang, currentLangData, searchTerm = '') => {
             delete updatedData.words[wordKey];
             
             await browser.storage.local.set({ [currentLang]: updatedData });
-            renderWords(currentLang, updatedData, searchTerm);
+            currentLangData = updatedData;  // Update in-memory data
+            renderWords(currentLang, currentLangData, searchTerm);
             
             showUndoMessage(wordKey, wordData, messageId, currentLang, updatedData, deletedWords, undoTimeouts);
         });
@@ -282,7 +283,8 @@ export const renderWords = (currentLang, currentLangData, searchTerm = '') => {
                 }
             };
             await browser.storage.local.set({ [currentLang]: updatedData });
-            renderWords(currentLang, updatedData, searchTerm);
+            currentLangData = updatedData;  // Update in-memory data
+            renderWords(currentLang, currentLangData, searchTerm);
         });
     });
 
@@ -290,7 +292,7 @@ export const renderWords = (currentLang, currentLangData, searchTerm = '') => {
         btn.addEventListener('click', () => {
             const wordKey = btn.dataset.word;
             const wordData = currentLangData.words[wordKey];
-            speakWord(wordData.native || wordData.hiragana, currentLangData.settings.voice);
+            speakWord(wordData.native || wordData.ruby, currentLangData.settings.voice);
         });
     });
 };
@@ -305,9 +307,9 @@ export const handleAddWord = async (currentLang, currentLangData, inputs) => {
     const success = await addWord(currentLang, currentLangData, en, translation, nativeScript);
     if (success) {
         clearInputs(newEnglish, newTranslation, newFurigana);
-        // Load fresh data after adding the word
-        const updatedData = await loadLanguageData(currentLang);
-        renderWords(currentLang, updatedData);
+        // Update the in-memory data
+        currentLangData = await loadLanguageData(currentLang);
+        renderWords(currentLang, currentLangData);
     }
 };
 
@@ -355,7 +357,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (defaultDict) {
             await browser.storage.local.set({ 
                 lastLanguage: currentLang,
-                [currentLang]: JSON.parse(JSON.stringify(defaultDict))
+                [currentLang]: defaultDict
             });
         }
     }
@@ -375,7 +377,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             const defaultDict = defaultDictionaries[currentLang];
             if (defaultDict) {
                 await browser.storage.local.set({ 
-                    [currentLang]: JSON.parse(JSON.stringify(defaultDict))
+                    [currentLang]: {
+                        words: { ...defaultDict.words },
+                        settings: { ...defaultDict.settings }
+                    }
                 });
             }
         }

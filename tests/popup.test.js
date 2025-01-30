@@ -171,9 +171,9 @@ describe('Storage Functions', () => {
 
     describe('loadLanguageData', () => {
         test.each([
-            ['ja', { ja: { words: { test: {} }, settings: {} } }, { words: { test: {} }, settings: {} }],
-            ['ja', {}, mockDictionaries.defaultDictionaries.ja],
-            ['xx', {}, { words: {}, settings: {} }]
+            ['ja', { ja: { words: { test: {} }, settings: { voice: 'ja-JP' } } }, { words: { test: {} }, settings: { voice: 'ja-JP' } }],
+            ['ja', {}, { words: { ...mockDictionaries.defaultDictionaries.ja.words }, settings: { ...mockDictionaries.defaultDictionaries.ja.settings } }],
+            ['xx', {}, { words: {}, settings: { voice: 'xx-XX' } }]
         ])('loadLanguageData(%p) with storage %p => %p', async (lang, storage, expected) => {
             browser.storage.local.get.mockResolvedValue(storage);
             expect(await loadLanguageData(lang)).toEqual(expected);
@@ -194,7 +194,7 @@ describe('Storage Functions', () => {
         test.each([
             [
                 'ja',
-                { words: {} },
+                { words: {}, settings: { voice: 'ja-JP' } },
                 'test',
                 'テスト',
                 'てすと',
@@ -206,14 +206,15 @@ describe('Storage Functions', () => {
                             ruby: 'てすと',
                             viewCount: 0
                         }
-                    }
+                    },
+                    settings: { voice: 'ja-JP' }
                 }
             ],
             [
                 'ja',
                 {
                     words: { existing: { native: 'existing', viewCount: 0 } },
-                    settings: { someOption: true }
+                    settings: { voice: 'ja-JP', someOption: true }
                 },
                 'test',
                 'テスト',
@@ -228,12 +229,15 @@ describe('Storage Functions', () => {
                             viewCount: 0
                         }
                     },
-                    settings: { someOption: true }
+                    settings: { voice: 'ja-JP', someOption: true }
                 }
             ],
             [
                 'ja',
-                { words: { test: { native: 'テスト', ruby: 'てすと' } } },
+                { 
+                    words: { test: { native: 'テスト', ruby: 'てすと' } },
+                    settings: { voice: 'ja-JP' }
+                },
                 'test',
                 'テスト2',
                 'てすと2',
@@ -520,7 +524,8 @@ describe('DOM Functions', () => {
                 },
                 settings: { 
                     showKanji: true,
-                    voice: 'ja-JP'
+                    voice: 'ja-JP',
+                    minKanjiViews: 100
                 }
             };
 

@@ -140,6 +140,7 @@ loadCache();
  */
 async function callOpenAiPartialTranslate(originalText, relevantWords, apiKey) {
   const prompt = buildPartialTranslationPrompt(originalText, relevantWords);
+  return prompt;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -181,40 +182,44 @@ function buildPartialTranslationPrompt(text, relevantWords) {
     `${word.en} -> ${word.useKanji ? word.native : word.ruby}`
   ).join('\n');
 
-  return `Translate this text by replacing ONLY the specified English words with their Japanese equivalents: "${text}"
+  return `Translate this text by replacing the specified source words with their target language equivalents: "${text}"
 
-Words to replace (ONLY these exact words should be translated):
+Words to replace (including their common variations):
 ${wordList}
 
 Rules:
-1. ONLY replace words that exactly match the list above when they appear as standalone words
+1. Replace words from the list above, including:
+   - Different tenses (e.g. "eat" matches "eating", "ate", "eaten")
+   - Common variations (e.g. "happy" matches "happier", "happiest")
+   - Plural forms (e.g. "cat" matches "cats")
 2. Keep ALL other words in English - never output "undefined" or leave words blank
 3. Preserve ALL spaces exactly as they appear in the original text:
    - Keep a space before and after each translated word
    - Example: "at school" -> "at がっこう" (not "atがっこう" or "at　がっこう")
 4. Do not translate a word if it's:
-   - Part of another word (e.g. "time" in "sometimes")
-   - Part of a compound (e.g. "time" in "timeline")
+   - Part of an unrelated word (e.g. don't translate "cat" in "category")
+   - Part of a compound word unless the whole phrase matches
    - After articles like "the" or "a" unless explicitly listed
 5. Keep all punctuation and formatting exactly as in the original
 6. If unsure whether to translate a word, keep it in English
 
 Examples:
-Text: "I go to school sometimes in the afternoon. The time is 2pm."
+Text: "I am eating at school. Schools are big. The time is 2pm."
 Words:
 I -> わたし
+eat -> たべる
 school -> がっこう
-afternoon -> ごご
 
-Should output: "わたし go to がっこう sometimes in the ごご. The time is 2pm."
-(Note: kept "time" in English because it's not in our word list)
+Should output: "わたし am たべる at がっこう. がっこう are big. The time is 2pm."
+(Note: translated variations like "eating" and "schools", but kept "time" in English)
 
-Text: "The time between times is timeline"
+Text: "The cats are happier now"
 Words:
-time -> じかん
+cat -> ねこ
+happy -> うれしい
 
-Should output: "The time between times is timeline"
-(Note: kept all instances of "time" in English because they're either after "the" or part of other words)`;
+Should output: "The ねこ are うれしい now"
+(Note: matched plural "cats" and comparative "happier")`;
 }
 
 /**
