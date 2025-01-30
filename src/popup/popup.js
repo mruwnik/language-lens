@@ -1,22 +1,14 @@
 // popup.js
 
-import {
-  getDisplayText,
-  formatTooltip,
-  speakWord,
-} from "../lib/wordDisplay.js";
 import { defaultDictionaries } from "../lib/defaultDictionaries.js";
 import {
-  loadLlmSettings,
-  saveLlmSettings,
-  getAvailableModels,
-  DEFAULT_MODELS,
+    DEFAULT_MODELS,
+    getAvailableModels,
+    loadLlmSettings,
+    saveLlmSettings,
 } from "../lib/settings.js";
-import {
-  loadTokenCounts,
-  getTodayTokenUsage,
-  getTokenUsage,
-} from "../lib/tokenCounter.js";
+import { loadTokenCounts } from "../lib/tokenCounter.js";
+import { formatTooltip, getDisplayText, speakWord } from "../lib/wordDisplay.js";
 
 console.log("Starting popup.js");
 
