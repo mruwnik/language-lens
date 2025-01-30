@@ -407,33 +407,35 @@
 </head>
 <body>
   <div class="section api-section">
-    <div>
-      <h2>LLM Settings</h2>
-      <div class="llm-settings">
-        <div class="setting-group">
-          <label for="llmProvider">Provider</label>
-          <select id="llmProvider" class="setting-select">
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic (Claude)</option>
-            <option value="openwebui">OpenWebUI (Local)</option>
-            <option value="google">Google (Gemini)</option>
-          </select>
-        </div>
-        
-        <div class="setting-group">
-          <label for="llmModel">Model</label>
-          <select id="llmModel" class="setting-select">
-            <!-- Will be populated based on provider -->
-          </select>
-        </div>
+    <details>
+      <summary>LLM Settings</summary>
+      <div>
+        <div class="llm-settings">
+          <div class="setting-group">
+            <label for="llmProvider">Provider</label>
+            <select id="llmProvider" class="setting-select">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openwebui">OpenWebUI (Local)</option>
+              <option value="google">Google (Gemini)</option>
+            </select>
+          </div>
+          
+          <div class="setting-group">
+            <label for="llmModel">Model</label>
+            <select id="llmModel" class="setting-select">
+              <!-- Will be populated based on provider -->
+            </select>
+          </div>
 
-        <div class="setting-group">
-          <label for="apiKey">API Key</label>
-          <input type="password" id="apiKey" placeholder="Enter API key..." autocomplete="off" spellcheck="false" />
+          <div class="setting-group">
+            <label for="apiKey">API Key</label>
+            <input type="password" id="apiKey" placeholder="Enter API key..." autocomplete="off" spellcheck="false" />
+          </div>
         </div>
       </div>
-    </div>
-    <button id="saveSettings">Save Settings</button>
+      <button id="saveSettings">Save Settings</button>
+    </details>
   </div>
 
   <div class="section">
