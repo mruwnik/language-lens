@@ -1,6 +1,13 @@
 // background.js
 import { callLlmProvider } from '../lib/llmProviders.js';
 import { loadLlmSettings } from '../lib/settings.js';
+import { 
+  makeTranslationCacheKey, 
+  containsAnyWord, 
+  splitIntoSentences,
+  makeHash
+} from '../lib/textProcessing.js';
+import { debounce } from '../lib/utils.js';
 
 // Cache configuration
 const CACHE_MAX_SIZE = 1000; // Maximum number of translations to store
@@ -51,31 +58,20 @@ const saveCache = debounce(async () => {
   }
 }, 1000);
 
-// Debounce helper
-function debounce(fn, ms) {
-  let timeout;
-  return (...args) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), ms);
-  };
-}
-
 // Update the message listener to use the new settings
 browser.runtime.onMessage.addListener(async (request, sender) => {
   if (request.type === "PARTIAL_TRANSLATE") {
     const { sentences, knownWords } = request.payload;
 
     // Filter to relevant words first, using word boundaries
-    const relevantWords = knownWords.filter(word => {
-      const wordRegex = new RegExp(`\\b${word.en}\\b`, 'i');
-      return sentences.some(s => wordRegex.test(s.text));
-    });
+    const relevantWords = knownWords.filter(word => 
+      word.en && word.native && // Only use words with both English and native translations
+      sentences.some(s => containsAnyWord(s.text, [word.en]))
+    );
 
-    // Sort words for consistent cache keys
-    const sortedWords = relevantWords
-      .map(w => w.en)
-      .sort()
-      .join(',');
+    if (!relevantWords.length) {
+      return { translations: sentences.map(s => ({ id: s.id, text: s.text })) };
+    }
 
     // Check cache for each sentence
     const now = Date.now();
@@ -83,7 +79,7 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
     const translations = [];
 
     for (const sentence of sentences) {
-      const cacheKey = makeHash(sentence.text + sortedWords);
+      const cacheKey = makeTranslationCacheKey(sentence.text, relevantWords);
       const cached = translationCache[cacheKey];
 
       if (cached && now - cached.timestamp < CACHE_EXPIRY_MS) {
@@ -116,31 +112,47 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
       }
 
       // Call selected provider with model for uncached sentences
+      const translationInput = uncachedSentences
+        .map(s => `<s id="${s.id}">${s.text}</s>`)
+        .join('\n');
+
+      console.log('uncachedSentences', uncachedSentences);
+      console.log('translationInput', translationInput);
+
       const translated = await callLlmProvider(
-        uncachedSentences.map(s => s.text).join('\n'), 
+        translationInput,
         relevantWords, 
         settings.apiKey, 
         settings.provider,
         settings.model
       );
 
-      // Split translated text back into sentences
-      const translatedParts = translated.split(/\n/).filter(Boolean);
-      
-      // Cache each newly translated sentence
-      uncachedSentences.forEach((sentence, i) => {
-        const translatedText = translatedParts[i]?.trim() || sentence.text;
-        const cacheKey = makeHash(sentence.text + sortedWords);
-        
-        translationCache[cacheKey] = {
-          text: translatedText,
-          timestamp: now
-        };
+      console.log('translated', translated);
 
-        translations.push({
-          id: sentence.id,
-          text: translatedText
-        });
+      // Parse translated text back into sentences with IDs
+      const translatedSentences = translated
+        .match(/<s id="([^"]+)">([^<]+)<\/s>/g)
+        ?.map(s => {
+          const match = s.match(/<s id="([^"]+)">([^<]+)<\/s>/);
+          return match ? {
+            id: match[1],
+            text: match[2].trim()
+          } : null;
+        })
+        .filter(Boolean) ?? [];
+      console.log('translatedSentences', translatedSentences);
+
+      // Cache each newly translated sentence
+      translatedSentences.forEach(translation => {
+        const sentence = uncachedSentences.find(s => s.id === translation.id);
+        if (sentence) {
+          const cacheKey = makeTranslationCacheKey(sentence.text, relevantWords);
+          translationCache[cacheKey] = {
+            text: translation.text,
+            timestamp: now
+          };
+        }
+        translations.push(translation);
       });
 
       // If cache is too large, remove oldest entries
@@ -171,16 +183,3 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
 
 // Initialize cache on extension load
 loadCache();
-
-/**
- * A simple non-cryptographic hash to create a cache key from a string.
- */
-function makeHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const chr = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + chr;
-    hash |= 0; // Convert to 32bit int
-  }
-  return hash.toString();
-}

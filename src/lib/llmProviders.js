@@ -148,26 +148,22 @@ function buildPartialTranslationPrompt(text, relevantWords) {
                                 .map(word => `${word[0]} -> ${word[1]}`)
                                 .join('\n');
 
-  return `Translate this text by replacing the specified source words with their target language equivalents: "${text}"
+  return `Translate this text by replacing the specified source words with their target language equivalents.
+Keep the XML tags intact and only translate the text inside them.  
+
+Text: ${text}
 
 Words to replace:
 ${wordList}
 
-Examples:
-Text: "I am eating at school. Schools are big. The time is 2pm."
-Words:
-I -> わたし
-eat -> たべる
-school -> がっこう
+Example input:
+<s id="s1">I am eating at school.</s>
+<s id="s2">The cats are happier now.</s>
 
-Should output: "わたし am たべる at がっこう. がっこう are big. The time is 2pm."
-
-Text: "The cats are happier now"
-Words:
-cat -> ねこ
-happy -> うれしい
-
-Should output: "The ねこ are うれしい now"`;
+Example output:
+<s id="s1">わたし am たべる at がっこう.</s>
+<s id="s2">The ねこ are うれしい now.</s>
+`;
 }
 
 /**
