@@ -142,12 +142,11 @@ async function callGoogle(prompt, systemPrompt, apiKey, model = 'gemini-pro') {
 /**
  * Builds a prompt instructing the LLM to replace only the specified words
  */
-function buildPartialTranslationPrompt(text, relevantWords) {
+export function buildPartialTranslationPrompt(text, relevantWords) {
   const wordList = relevantWords.map(word => [word.en, word.useKanji ? word.native : (word.ruby || word.native)])
                                 .filter(word => word[0] && word[1])
                                 .map(word => `${word[0]} -> ${word[1]}`)
                                 .join('\n');
-                                console.log(wordList);
 
   return `Translate this text by replacing the specified source words with their target language equivalents.
 Keep the XML tags intact and only translate the text inside them.  
@@ -170,9 +169,7 @@ Example output:
 /**
  * Main function to call the selected LLM provider
  */
-export async function callLlmProvider(originalText, relevantWords, apiKey, provider = DEFAULT_PROVIDER, model) {
-  const prompt = buildPartialTranslationPrompt(originalText, relevantWords);
-
+export async function callLlmProvider(prompt, apiKey, provider = DEFAULT_PROVIDER, model) {
   try {
     switch (provider) {
       case LLM_PROVIDERS.OPENAI:

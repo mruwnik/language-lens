@@ -2,7 +2,7 @@ import { debounce } from '../lib/utils.js';
 import { containsAnyWord, isKanji } from '../lib/textProcessing.js';
 
 const DEBOUNCE_MS = 1000;
-const MIN_KANJI_VIEW_COUNT = 35;
+export const MIN_KANJI_VIEW_COUNT = 2;
 
 // Debounced storage update
 const updateStorage = debounce(async (key, value) => {
@@ -82,10 +82,10 @@ export class TranslationState {
 
     async loadFromStorage() {
         try {
-            const { lastLanguage, ...langData } = 
-                await browser.storage.local.get(['lastLanguage', this.currentLang]);
-            
+            const { lastLanguage } = await browser.storage.local.get(['lastLanguage']);
             this.currentLang = lastLanguage ?? 'ja';
+            const { ...langData } = await browser.storage.local.get(this.currentLang);
+            
             this.seenKanjiThisPage.clear();
             this.seenWordsThisPage.clear();
             

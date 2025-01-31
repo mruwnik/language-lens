@@ -403,6 +403,98 @@
     details[open] summary {
       margin-bottom: 16px;
     }
+    .suggest-btn {
+      margin-top: 12px;
+      width: 100%;
+      background: #6c757d;
+      color: white;
+      border: none;
+      padding: 8px;
+      border-radius: 4px;
+    }
+    .suggest-btn:hover {
+      background: #5a6268;
+    }
+
+    .suggestion-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .suggestion-content {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 400px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .suggestion-list {
+      margin: 16px 0;
+    }
+
+    .suggestion-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .suggestion-word {
+      font-weight: 500;
+    }
+
+    .suggestion-translation {
+      color: #28a745;
+      grid-column: 1 / -1;
+    }
+
+    .suggestion-desc {
+      grid-column: 1 / -1;
+      color: #666;
+      font-size: 0.9em;
+      margin-top: 4px;
+    }
+
+    .use-suggestion {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      height: fit-content;
+    }
+
+    .use-suggestion:hover {
+      background: #0056b3;
+    }
+
+    .close-modal {
+      width: 100%;
+      padding: 8px;
+      background: #6c757d;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 16px;
+    }
+
+    .close-modal:hover {
+      background: #5a6268;
+    }
   </style>
 </head>
 <body>
@@ -511,6 +603,7 @@
       <input type="text" id="newFurigana" placeholder="Furigana" />
       <button id="addWord">Add</button>
     </div>
+    <button id="suggestWords" class="suggest-btn">Suggest Related Words</button>
   </div>
 
   <script src="defaultDictionaries.js" type="module"></script>

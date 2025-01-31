@@ -1,5 +1,5 @@
 // background.js
-import { callLlmProvider } from '../lib/llmProviders.js';
+import { callLlmProvider, buildPartialTranslationPrompt } from '../lib/llmProviders.js';
 import { loadLlmSettings } from '../lib/settings.js';
 import { 
   makeTranslationCacheKey, 
@@ -91,8 +91,7 @@ const translateBatch = async (batch, relevantWords, settings, now) => {
     .join('\n');
 
   const translated = await callLlmProvider(
-    translationInput,
-    relevantWords, 
+    buildPartialTranslationPrompt(translationInput, relevantWords),
     settings.apiKey, 
     settings.provider,
     settings.model
@@ -125,19 +124,15 @@ const translateBatch = async (batch, relevantWords, settings, now) => {
   return translatedSentences;
 };
 
-// Update the message listener to use batching
-browser.runtime.onMessage.addListener(async (request, sender) => {
-  if (request.type === "PARTIAL_TRANSLATE") {
-    const { sentences, knownWords } = request.payload;
-
+const handlePartialTranslate = async (sentences, knownWords) => {
     // Filter to relevant words first, using word boundaries
     const relevantWords = knownWords.filter(word => 
-      word.en && word.native && // Only use words with both English and native translations
-      sentences.some(s => containsAnyWord(s.text, [word.en]))
+        word.en && word.native && // Only use words with both English and native translations
+        sentences.some(s => containsAnyWord(s.text, [word.en]))
     );
 
     if (!relevantWords.length) {
-      return { translations: sentences.map(s => ({ id: s.id, text: s.text })) };
+        return { translations: sentences.map(s => ({ id: s.id, text: s.text })) };
     }
 
     // Check cache for each sentence
@@ -146,94 +141,171 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
     const translations = [];
 
     for (const sentence of sentences) {
-      const cacheKey = makeTranslationCacheKey(sentence.text, relevantWords);
-      const cached = translationCache[cacheKey];
+        const cacheKey = makeTranslationCacheKey(sentence.text, relevantWords);
+        const cached = translationCache[cacheKey];
 
-      if (cached && now - cached.timestamp < CACHE_EXPIRY_MS) {
-        translations.push({
-          id: sentence.id,
-          text: cached.text
-        });
-      } else {
-        uncachedSentences.push(sentence);
-      }
+        if (cached && now - cached.timestamp < CACHE_EXPIRY_MS) {
+            translations.push({
+                id: sentence.id,
+                text: cached.text
+            });
+        } else {
+            uncachedSentences.push(sentence);
+        }
     }
 
     // If all sentences were cached, return immediately
     if (uncachedSentences.length === 0) {
-      return Promise.resolve({ translations });
+        return Promise.resolve({ translations });
     }
 
     try {
-      // Load settings including provider, model, and API key
-      const settings = await loadLlmSettings();
-      
-      if (!settings.apiKey) {
-        console.warn(`No API key found for provider: ${settings.provider}`);
-        return { 
-          translations: [
-            ...translations,
-            ...uncachedSentences.map(s => ({ id: s.id, text: s.text }))
-          ]
-        };
-      }
-
-      // Split uncached sentences into batches
-      const batches = batchSentences(uncachedSentences);
-      
-      // Process each batch with retries and delays
-      for (const batch of batches) {
-        let retries = 0;
-        let success = false;
+        // Load settings including provider, model, and API key
+        const settings = await loadLlmSettings();
         
-        while (!success && retries < MAX_RETRIES) {
-          try {
-            const batchTranslations = await translateBatch(batch, relevantWords, settings, now);
-            translations.push(...batchTranslations);
-            success = true;
-            
-            // Add delay between batches if there are more
-            if (batches.length > 1) {
-              await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
-            }
-          } catch (err) {
-            retries++;
-            if (retries === MAX_RETRIES) {
-              console.error(`Failed to translate batch after ${MAX_RETRIES} retries:`, err);
-              // On final retry failure, add untranslated sentences
-              translations.push(...batch.map(s => ({ id: s.id, text: s.text })));
-            } else {
-              // Exponential backoff between retries
-              await new Promise(resolve => setTimeout(resolve, BATCH_DELAY * Math.pow(2, retries)));
-            }
-          }
+        if (!settings.apiKey) {
+            console.warn(`No API key found for provider: ${settings.provider}`);
+            return { 
+                translations: [
+                    ...translations,
+                    ...uncachedSentences.map(s => ({ id: s.id, text: s.text }))
+                ]
+            };
         }
-      }
 
-      // If cache is too large, remove oldest entries
-      const entries = Object.entries(translationCache);
-      if (entries.length > CACHE_MAX_SIZE) {
+        // Split uncached sentences into batches
+        const batches = batchSentences(uncachedSentences);
+        
+        // Process each batch with retries and delays
+        for (const batch of batches) {
+            let retries = 0;
+            let success = false;
+            
+            while (!success && retries < MAX_RETRIES) {
+                try {
+                    const batchTranslations = await translateBatch(batch, relevantWords, settings, now);
+                    translations.push(...batchTranslations);
+                    success = true;
+                    
+                    // Add delay between batches if there are more
+                    if (batches.length > 1) {
+                        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+                    }
+                } catch (err) {
+                    retries++;
+                    if (retries === MAX_RETRIES) {
+                        console.error(`Failed to translate batch after ${MAX_RETRIES} retries:`, err);
+                        // On final retry failure, add untranslated sentences
+                        translations.push(...batch.map(s => ({ id: s.id, text: s.text })));
+                    } else {
+                        // Exponential backoff between retries
+                        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY * Math.pow(2, retries)));
+                    }
+                }
+            }
+        }
+
+        await cleanupCache();
+        return { translations };
+    } catch (err) {
+        console.error("Error in PARTIAL_TRANSLATE:", err);
+        return { 
+            translations: [
+                ...translations,
+                ...uncachedSentences.map(s => ({ id: s.id, text: s.text }))
+            ]
+        };
+    }
+};
+
+const buildNewWordsPrompt = (currentWords, language) => {
+    const ruby = language === 'ja' ? ', "ruby": "reading"' : '';
+    const format = `{ "native": "translation"${ruby} }`;
+    const example = language === 'ja' ? '{"girl": {"native": "彼女", "ruby": "かのじょ"}}' : `{"${currentWords[0].en}": {"native": "${currentWords[0].native}"}}`;
+
+    return `Based on the following list of known words and their usage frequency, suggest 10 new words that would be useful to learn next. The words should be related to the existing vocabulary but gradually increase in complexity.
+
+Current vocabulary:
+${currentWords.map(w => `${w.en} (seen ${w.viewCount} times)`).join('\n')}
+
+Please respond with ONLY a JSON object mapping English words to their translations, in this format:
+{ "word": ${format} }
+  
+Example:
+${example}
+
+Please respond with ONLY a JSON object.`;
+};
+
+const initializeNewWord = (word) => {
+    word.viewCount = 0;
+    if (word.ruby) {
+        word.kanjiViewCounts = {};
+        if (word.native) {
+            [...word.native].forEach(char => {
+                if (char.match(/[\u4e00-\u9faf]/)) {
+                    word.kanjiViewCounts[char] = 0;
+                }
+            });
+        }
+    }
+    return word;
+};
+
+const handleRequestNewWords = async ({ currentWords, language }) => {
+    try {
+        const settings = await loadLlmSettings();
+        
+        if (!settings.apiKey) {
+            console.warn(`No API key found for provider: ${settings.provider}`);
+            return { newWords: {} };
+        }
+
+        const prompt = buildNewWordsPrompt(currentWords, language);
+        const result = await callLlmProvider(prompt, settings.apiKey, settings.provider, settings.model);
+        
+        try {
+            const newWords = JSON.parse(result);
+            if (typeof newWords !== 'object') throw new Error('Invalid response format');
+            
+            // Initialize view counts and other metadata
+            Object.values(newWords).forEach(initializeNewWord);
+            return { newWords };
+        } catch (err) {
+            console.error('Failed to parse LLM response:', err);
+            return { newWords: {} };
+        }
+    } catch (err) {
+        console.error("Error in REQUEST_NEW_WORDS:", err);
+        return { newWords: {} };
+    }
+};
+
+const cleanupCache = async () => {
+    const entries = Object.entries(translationCache);
+    if (entries.length > CACHE_MAX_SIZE) {
         const sortedEntries = entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
         translationCache = sortedEntries
-          .slice(0, CACHE_MAX_SIZE)
-          .reduce((acc, [key, value]) => {
-            acc[key] = value;
-            return acc;
-          }, {});
-      }
-
-      saveCache();
-      return { translations };
-    } catch (err) {
-      console.error("Error in PARTIAL_TRANSLATE:", err);
-      return { 
-        translations: [
-          ...translations,
-          ...uncachedSentences.map(s => ({ id: s.id, text: s.text }))
-        ]
-      };
+            .slice(0, CACHE_MAX_SIZE)
+            .reduce((acc, [key, value]) => {
+                acc[key] = value;
+                return acc;
+            }, {});
     }
-  }
+    saveCache();
+};
+
+// Update the message listener to use the new handlers
+browser.runtime.onMessage.addListener(async (request, sender) => {
+    switch (request.type) {
+        case "PARTIAL_TRANSLATE":
+            return handlePartialTranslate(request.payload.sentences, request.payload.knownWords);
+        case "REQUEST_NEW_WORDS":
+            return handleRequestNewWords(request.payload);
+        default:
+            console.warn(`Unknown message type: ${request.type}`);
+            return {};
+    }
 });
 
 // Initialize cache on extension load

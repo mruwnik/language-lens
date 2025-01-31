@@ -9,6 +9,7 @@ import {
 } from "../lib/settings.js";
 import { loadTokenCounts } from "../lib/tokenCounter.js";
 import { formatTooltip, getDisplayText, speakWord } from "../lib/wordDisplay.js";
+import { callLlmProvider } from '../lib/llmProviders.js';
 
 console.log("Starting popup.js");
 
@@ -19,6 +20,8 @@ export const MESSAGES = {
   API_KEY_REQUIRED: "Please enter your OpenAI API key (sk-...)",
   API_KEY_SAVED: "API key saved!",
   API_KEY_ERROR: "Error saving API key. Please try again.",
+  NO_WORD_TO_SUGGEST: "Please enter an English word first!",
+  SUGGESTION_ERROR: "Error getting suggestions. Please try again.",
 };
 
 const KANJI_REGEX = /[\u4e00-\u9faf]/;
@@ -541,6 +544,122 @@ Output: ${formatNumber(outputTokens)}`;
     formatNumber(totalOutput);
 }
 
+async function suggestRelatedWords(currentLang, currentLangData) {
+  const currentWords = Object.entries(currentLangData.words).map(([en, data]) => ({
+    en,
+    native: data.native,
+    ruby: data.ruby,
+    viewCount: data.viewCount || 0
+  }));
+
+  if (currentWords.length === 0) {
+    throw new Error("Please add some words first to get suggestions based on your vocabulary.");
+  }
+
+  const message = {
+    type: "REQUEST_NEW_WORDS",
+    payload: {
+      currentWords,
+      language: currentLang
+    }
+  };
+
+  try {
+    const response = await browser.runtime.sendMessage(message);
+    const suggestions = Object.entries(response.newWords)
+      .filter(([en]) => !currentLangData.words[en]) // Filter out existing words
+      .map(([en, data]) => ({
+        en,
+        ...data
+      }));
+
+    if (suggestions.length === 0) {
+      throw new Error("No new words to suggest. Try adding more words to your vocabulary first.");
+    }
+
+    return suggestions;
+  } catch (error) {
+    console.error('Error getting suggestions:', error);
+    throw new Error(error.message || MESSAGES.SUGGESTION_ERROR);
+  }
+}
+
+async function handleSuggestWords(currentLang, currentLangData) {
+  const suggestBtn = document.getElementById('suggestWords');
+  suggestBtn.disabled = true;
+  suggestBtn.textContent = 'Getting suggestions...';
+
+  try {
+    let suggestions = await suggestRelatedWords(currentLang, currentLangData);
+    
+    // Create a modal to display suggestions
+    const modal = document.createElement('div');
+    modal.className = 'suggestion-modal';
+    
+    function renderSuggestions() {
+      modal.innerHTML = `
+        <div class="suggestion-content">
+          <h3>Suggested words to learn next:</h3>
+          ${suggestions.length > 0 ? `
+            <div class="suggestion-list">
+              ${suggestions.map(s => `
+                <div class="suggestion-item">
+                  <div class="suggestion-word">${s.en}</div>
+                  <div class="suggestion-translation">${s.native}${s.ruby ? ` (${s.ruby})` : ''}</div>
+                  <button class="use-suggestion">Add</button>
+                </div>
+              `).join('')}
+            </div>
+          ` : `
+            <div class="no-suggestions">
+              No more suggestions available
+            </div>
+          `}
+          <button class="close-modal">Close</button>
+        </div>
+      `;
+
+      // Re-add event listeners
+      modal.querySelector('.close-modal').addEventListener('click', () => {
+        modal.remove();
+      });
+
+      modal.querySelectorAll('.use-suggestion').forEach((btn, i) => {
+        btn.addEventListener('click', async () => {
+          const suggestion = suggestions[i];
+          
+          // Add the word
+          if (validateNewWord(suggestion.en, suggestion.native, currentLangData)) {
+            await addWord(
+              currentLang,
+              currentLangData,
+              suggestion.en,
+              suggestion.native,
+              suggestion.ruby || ''
+            );
+            // Update the in-memory data and re-render word list
+            currentLangData = await loadLanguageData(currentLang);
+            renderWords(currentLang, currentLangData);
+
+            // Remove this suggestion from the list and re-render modal
+            suggestions = suggestions.filter((_, index) => index !== i);
+            renderSuggestions();
+          }
+        });
+      });
+    }
+
+    document.body.appendChild(modal);
+    renderSuggestions();
+
+  } catch (error) {
+    alert(error.message || MESSAGES.SUGGESTION_ERROR);
+  } finally {
+    suggestBtn.disabled = false;
+    suggestBtn.textContent = 'Suggest Related Words';
+  }
+}
+
 // Main setup
 document.addEventListener("DOMContentLoaded", async () => {
   const elements = {
@@ -549,6 +668,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     newTranslation: document.getElementById("newTranslation"),
     newFurigana: document.getElementById("newFurigana"),
     addWordBtn: document.getElementById("addWord"),
+    suggestWordsBtn: document.getElementById("suggestWords"),
     langSelect: document.getElementById("targetLang"),
     wordSearch: document.getElementById("wordSearch"),
     llmProvider: document.getElementById("llmProvider"),
@@ -640,6 +760,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Add new word
   elements.addWordBtn.addEventListener("click", () =>
     handleAddWord(currentLang, currentLangData, elements)
+  );
+
+  // Add suggest words handler
+  elements.suggestWordsBtn.addEventListener("click", () => 
+    handleSuggestWords(currentLang, currentLangData)
   );
 
   // Time range change handler
