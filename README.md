@@ -1,30 +1,30 @@
-# Kanji Companion
+# Language Companion
 
 <div align="center">
-  <img src="public/icons/icon128.png" alt="Kanji Companion Logo" width="128" height="128">
+  <img src="public/icons/icon128.png" alt="Language Companion Logo" width="128" height="128">
 </div>
 
-A browser extension that makes learning Japanese more natural and effective by providing intelligent, context-aware kanji assistance as you browse the web.
+A browser extension that makes language learning more natural and effective by providing intelligent, context-aware assistance as you browse the web.
 
 ## Key Features
 
-🎯 **Smart Kanji Recognition**
-- Automatically identifies kanji in web pages
-- Tracks your familiarity with each character
-- Adapts furigana display based on your knowledge level
+🎯 **Smart Language Recognition**
+- Automatically identifies words and phrases in web pages
+- Tracks your familiarity with vocabulary
+- Adapts display based on your knowledge level
 
 🔍 **Contextual Learning**
-- Learn kanji in real-world context
-- Hover tooltips show meanings and readings
+- Learn words in real-world context
+- Hover tooltips show translations and meanings
 - Progressive difficulty adjustment
 
 🗣️ **Interactive Learning**
-- Built-in Japanese text-to-speech
-- Click to hear native pronunciation
+- Intelligent partial translation assistance
+- Learn vocabulary in context
 - Track your progress over time
 
 ⚡ **Performance Focused**
-- Lightweight and fast
+- Efficient caching system
 - Works on any webpage
 - Minimal impact on browsing experience
 
@@ -37,8 +37,8 @@ Coming soon to Firefox Add-ons and Chrome Web Store!
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/kanji-companion.git
-   cd kanji-companion
+   git clone https://github.com/yourusername/language-plugin.git
+   cd language-plugin
    ```
 
 2. Install dependencies:
@@ -66,38 +66,25 @@ Coming soon to Firefox Add-ons and Chrome Web Store!
 
 ## Development
 
-### Commands
-
-```bash
-# Start development mode with hot reload
-npm run dev
-
-# Build for production
-npm run build
-
-# Run tests
-npm test
-
-# Lint code
-npm run lint
-
-# Format code
-npm run format
-```
-
 ### Project Structure
 
 ```
-kanji-companion/
+language-plugin/
 ├── src/
-│   ├── popup/      # Extension popup UI
-│   ├── background/ # Background service worker
-│   ├── content/    # Content script for webpage integration
-│   └── lib/        # Shared utilities and data
-├── public/         # Static assets
-├── tests/          # Test suite
-└── dist/           # Built extension (generated)
+│   ├── popup/         # Extension popup UI
+│   ├── background/    # Background service worker
+│   ├── content/       # Content script for webpage integration
+│   └── lib/          # Shared utilities and core functionality
+├── public/           # Static assets and extension manifest
+└── dist/            # Built extension (generated)
 ```
+
+### Core Components
+
+- **Background Service**: Handles translation caching and LLM integration
+- **Content Scripts**: Manage webpage integration and text processing
+- **Popup UI**: User settings and learning progress interface
+- **Library**: Shared utilities for text processing, settings, and LLM providers
 
 ## Contributing
 
@@ -105,10 +92,4 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 ## License
 
-[MIT](LICENSE) © Your Name
-
----
-
-<div align="center">
-Made with ❤️ for Japanese learners
-</div> 
+[MIT](LICENSE)

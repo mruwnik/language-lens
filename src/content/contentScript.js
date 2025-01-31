@@ -208,8 +208,6 @@ async function translateText(sentences, knownWords) {
     if (!sentences?.length || !knownWords?.size) return [];
 
     // Convert Map to array of serializable word objects
-    
-    console.log(knownWords);
     const wordArray = [...knownWords.entries()].map(([en, data]) => ({
         en,
         native: data.native,
