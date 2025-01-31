@@ -37,8 +37,8 @@ Coming soon to Firefox Add-ons and Chrome Web Store!
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/language-plugin.git
-   cd language-plugin
+   git clone https://github.com/mruwnik/language-lens.git
+   cd language-lens
    ```
 
 2. Install dependencies:

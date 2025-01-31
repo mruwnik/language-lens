@@ -2,7 +2,7 @@ import { debounce } from '../lib/utils.js';
 import { containsAnyWord, isKanji } from '../lib/textProcessing.js';
 
 const DEBOUNCE_MS = 1000;
-export const MIN_KANJI_VIEW_COUNT = 2;
+export const MIN_KANJI_VIEW_COUNT = 35;
 
 // Debounced storage update
 const updateStorage = debounce(async (key, value) => {
