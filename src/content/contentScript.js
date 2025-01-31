@@ -5,7 +5,7 @@ import {
     containsAnyWord
 } from '../lib/textProcessing.js';
 import { replaceNode, collectTextNodes, processedNodes } from './dom.js';
-import { TranslationState } from './state.js';
+import { TranslationState, MIN_KANJI_VIEW_COUNT } from './state.js';
 
 // Add styles to document
 const addStyles = () => {
@@ -47,6 +47,8 @@ const translateAndReplace = async (state, sentences) => {
     if (!sentences.length) return;
     
     const translations = await translateText(sentences, state.knownWords);
+    console.log('translations', translations);
+    console.log('sentences', sentences);
     
     // Group sentences by node, handling multiple nodes per sentence
     const nodeMap = new Map();
@@ -78,7 +80,7 @@ const translateAndReplace = async (state, sentences) => {
     for (const [node, nodeTranslations] of nodeMap.entries()) {
         nodeTranslations.forEach(({ original, translated }) => {
             if (translated !== original) {
-                replaceNode(node, original, translated, state.knownWords);
+                replaceNode(state, node, original, translated, state.knownWords);
             }
         });
     }
@@ -121,6 +123,56 @@ const setupIntersectionObserver = (state) => {
 // Initialize and run
 const state = new TranslationState();
 
+const checkAndRequestNewWords = async (state) => {
+    // Count how many words were shown and check their view counts
+    const shownWords = [...state.seenWordsThisPage];
+    if (shownWords.length < 10) return;
+
+    // Check if any word has fewer than 35 views
+    const hasLowViewCount = [...state.knownWords.entries()].some(([en, word]) => 
+        state.seenWordsThisPage.has(en) && word.viewCount < MIN_KANJI_VIEW_COUNT
+    );
+    
+    if (!hasLowViewCount) {
+        try {
+            // Request 10 new words based on current known words
+            const response = await browser.runtime.sendMessage({
+                type: "REQUEST_NEW_WORDS",
+                payload: {
+                    language: state.currentLang,
+                    currentWords: [...state.knownWords.entries()].map(([en, data]) => ({
+                        en,
+                        native: data.native,
+                        ruby: data.ruby,
+                        useKanji: data.useKanji,
+                        viewCount: data.viewCount
+                    }))
+                }
+            });
+
+            if (response?.newWords) {
+                // Add new words to the dictionary
+                const { [state.currentLang]: langData } = await browser.storage.local.get(state.currentLang);
+                const updatedData = {
+                    ...langData,
+                    words: {
+                        ...langData.words,
+                        ...response.newWords
+                    }
+                };
+                await browser.storage.local.set({ [state.currentLang]: updatedData });
+                
+                // Update in-memory state
+                Object.entries(response.newWords).forEach(([en, word]) => {
+                    state.knownWords.set(en.toLowerCase(), word);
+                });
+            }
+        } catch (err) {
+            console.error("Failed to request new words:", err);
+        }
+    }
+};
+
 const initialize = async () => {
     try {
         addStyles();
@@ -152,6 +204,9 @@ const initialize = async () => {
                 });
             }, 1000)
         );
+
+        // Check if we should request new words
+        await checkAndRequestNewWords(state);
 
         mutationObserver.observe(document.body, {
             childList: true,

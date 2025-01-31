@@ -1,11 +1,12 @@
 import { SPEAKER_ICON } from './styles.js';
 import { isVisible } from './utils.js';
 import { extractWords } from '../lib/textProcessing.js';
+import { speakWord } from '../lib/wordDisplay.js';
 // Cache for processed nodes
 export const processedNodes = new WeakSet();
 
 // Simplify replaceNode function
-export const replaceNode = (node, originalText, html, knownWords) => {
+export const replaceNode = (state, node, originalText, html, knownWords) => {
     if (!node?.parentNode || originalText === html) return;
 
 
@@ -58,9 +59,7 @@ export const replaceNode = (node, originalText, html, knownWords) => {
         if (iconParent) {
             e.stopPropagation();
             const text = iconParent.dataset.text;
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'ja-JP';
-            speechSynthesis.speak(utterance);
+            speakWord(text, state.currentLang);
         }
     });
 
