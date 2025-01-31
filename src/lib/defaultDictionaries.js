@@ -306,6 +306,53 @@ export const welshDictionary = {
     }
 };
 
+export const latinDictionary = {
+    words: {
+        // Pronouns
+        "I": { native: "ego" },
+        "you": { native: "tu" },
+        "he": { native: "is" },
+        "she": { native: "ea" },
+        "we": { native: "nos" },
+        "they": { native: "ei" },
+
+        // Basic verbs (infinitive)
+        "eat": { native: "edere" },
+        "drink": { native: "bibere" },
+        "sleep": { native: "dormire" },
+        "go": { native: "ire" },
+        "come": { native: "venire" },
+        "speak": { native: "loqui" },
+        "read": { native: "legere" },
+        "write": { native: "scribere" },
+        "see": { native: "videre" },
+        "hear": { native: "audire" },
+
+        // Common nouns
+        "man": { native: "vir" },
+        "woman": { native: "femina" },
+        "boy": { native: "puer" },
+        "girl": { native: "puella" },
+        "water": { native: "aqua" },
+        "food": { native: "cibus" },
+        "house": { native: "domus" },
+        "book": { native: "liber" },
+        "friend": { native: "amicus" },
+        "enemy": { native: "hostis" },
+
+        // Basic expressions
+        "hello": { native: "salve" },
+        "goodbye": { native: "vale" },
+        "please": { native: "quaeso" },
+        "thank you": { native: "gratias" },
+        "yes": { native: "ita" },
+        "no": { native: "non" }
+    },
+    settings: {
+        voice: "la"  // ISO 639-1 code for Latin
+    }
+};
+
 // Initialize Japanese dictionary with kanji counts
 Object.values(japaneseDictionary.words).forEach(word => {
     word.viewCount = 0;
@@ -322,7 +369,7 @@ Object.values(japaneseDictionary.words).forEach(word => {
 // Initialize view counts for all other dictionaries
 [chineseDictionary, koreanDictionary, spanishDictionary, 
  frenchDictionary, germanDictionary, polishDictionary, 
- welshDictionary].forEach(dict => {
+ welshDictionary, latinDictionary].forEach(dict => {
     Object.values(dict.words).forEach(word => {
         word.viewCount = 0;
     });
@@ -336,5 +383,6 @@ export const defaultDictionaries = {
     fr: frenchDictionary,
     de: germanDictionary,
     pl: polishDictionary,
-    cy: welshDictionary
+    cy: welshDictionary,
+    la: latinDictionary
 };
