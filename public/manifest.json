@@ -1,0 +1,65 @@
+{
+    "manifest_version": 3,
+    "name": "Language Lens",
+    "version": "1.0.1",
+    "description": "Transform your browsing by replacing English words with foreign equivalents as you read. Choose which words to replace, toggle difficulty with kanji/character support, and reinforce learning through hover translations and native pronunciation.",
+    
+    "action": {
+      "default_popup": "popup.html",
+      "default_title": "Language Lens",
+      "default_icon": {
+        "16": "icons/icon16.png",
+        "32": "icons/icon32.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+      }
+    },
+  
+    "icons": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+  
+    "background": {
+      "scripts": ["background.js"],
+      "type": "module"
+    },
+  
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["content.js"],
+        "css": []
+      }
+    ],
+  
+    "permissions": [
+      "storage",
+      "activeTab",
+      "scripting"
+    ],
+  
+    "content_security_policy": {
+      "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'"
+    },
+  
+    "web_accessible_resources": [
+      {
+        "resources": ["lib/*"],
+        "matches": ["<all_urls>"]
+      }
+    ],
+  
+    "browser_specific_settings": {
+      "gecko": {
+        "id": "language-lens@example.com",
+        "strict_min_version": "109.0"
+      }
+    },
+
+    "author": "Your Name",
+    "homepage_url": "https://github.com/yourusername/kanji-companion"
+}
+  
