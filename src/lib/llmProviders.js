@@ -160,6 +160,26 @@ Example output:
 `;
 }
 
+export const buildNewWordsPrompt = (currentWords, language) => {
+  const ruby = language === 'ja' ? ', "ruby": "reading"' : '';
+  const format = `{ "native": "translation"${ruby} }`;
+  const example = language === 'ja' ? '{"girl": {"native": "彼女", "ruby": "かのじょ"}}' : `{"${currentWords[0].en}": {"native": "${currentWords[0].native}"}}`;
+
+  return `Based on the following list of known words and their usage frequency, suggest 10 *new* words that would be useful to learn next. The words should be related to the existing vocabulary but gradually increase in complexity.
+
+Current vocabulary:
+${currentWords.map(w => `${w.en} (${w.viewCount})`).join('\n')}
+
+Please respond with a JSON object mapping English words to their translations, in this format:
+<json>{ "word": ${format} }</json>
+
+Example:
+<json>${example}</json>
+
+Make sure to only suggest words that are not already in the list. This is very important, so please make sure to check the list before suggesting a word.`;
+};
+
+
 /**
  * Main function to call the selected LLM provider
  */

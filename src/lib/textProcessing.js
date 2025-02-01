@@ -27,46 +27,6 @@ const PATTERNS = {
     )
 };
 
-// Cache
-class LRUCache extends Map {
-    constructor(maxSize = 1000) {
-        super();
-        this.maxSize = maxSize;
-    }
-
-    get(key) {
-        const value = super.get(key);
-        if (value) {
-            this.delete(key);
-            this.set(key, value);
-        }
-        return value;
-    }
-
-    set(key, value) {
-        if (this.size >= this.maxSize) {
-            this.delete(this.keys().next().value);
-        }
-        super.set(key, value);
-        return this;
-    }
-}
-
-const cache = new LRUCache();
-const cached = (key, fn) => cache.get(key) ?? cache.set(key, fn()).get(key);
-
-// Hashing
-export const makeHash = str => {
-    if (typeof str !== 'string') return '0';
-    
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i);
-        hash |= 0;
-    }
-    return hash.toString();
-};
-
 // Text normalization
 export const normalizeText = text =>
     typeof text === 'string'
@@ -88,29 +48,27 @@ export const createRubyElement = (base, reading) =>
 export const extractWords = text => {
     if (!text) return [];
     
-    return cached(`words:${text}`, () => {
-        const normalized = normalizeText(text);
+    const normalized = normalizeText(text);
         
-        if (!PATTERNS.KANJI.test(normalized)) {
-            return normalized.match(PATTERNS.WORD) ?? [];
+    if (!PATTERNS.KANJI.test(normalized)) {
+        return normalized.match(PATTERNS.WORD) ?? [];
+    }
+        
+    const words = new Set();
+    let current = '';
+    
+    [...normalized].forEach(char => {
+        if (isKanji(char)) {
+            if (current) words.add(current);
+            words.add(char);
+            current = '';
+        } else {
+            current += char;
         }
-        
-        const words = new Set();
-        let current = '';
-        
-        [...normalized].forEach(char => {
-            if (isKanji(char)) {
-                if (current) words.add(current);
-                words.add(char);
-                current = '';
-            } else {
-                current += char;
-            }
-        });
-        
-        if (current) words.add(current);
-        return [...words];
     });
+    
+    if (current) words.add(current);
+    return [...words];
 };
 
 export const containsAnyWord = (text, words) => {
@@ -133,17 +91,36 @@ export const splitIntoSentences = text =>
             .filter(Boolean)
         : [];
 
-// Translation utilities
-export const makeTranslationCacheKey = (text, words) => {
-    if (!text || !Array.isArray(words)) return '';
-    
-    return cached(`key:${text}:${words.length}`, () => {
-        const wordKey = words
-            .map(w => w?.en?.toLowerCase())
-            .filter(Boolean)
-            .sort()
-            .join(',');
-            
-        return `${makeHash(text)}:${makeHash(wordKey)}`;
-    });
-};
+
+/**
+ * Splits two strings into matching sentence-like chunks
+ * and returns an array of [originalChunk, transformedChunk] pairs.
+ * Rejoining all originalChunks will produce the original string exactly,
+ * and rejoining all transformedChunks will reproduce the transformed string.
+ *
+ * @param {string} original    - The original text.
+ * @param {string} transformed - The transformed (partially translated) text.
+ * @returns {[string, string][]} - An array of pairs [originalSentence, transformedSentence].
+ */
+export const createSentencePairs = (original, transformed) => {
+    // Regex explanation:
+    //  - [^.!?]+   : match one or more characters that are not ., !, or ?
+    //  - (?:[.!?]+|$) : followed by one or more punctuation chars .!? OR end-of-string
+    //  - \s*       : consume trailing whitespace (if any)
+    const SENTENCE_REGEX = /[^.!?]+(?:[.!?]+|$)\s*/g;
+  
+    // Extract chunks from both original and transformed
+    const originalChunks   = original.match(SENTENCE_REGEX)   || [];
+    const transformedChunks = transformed.match(SENTENCE_REGEX) || [];
+  
+    // Check that both splits yield the same number of chunks
+    if (originalChunks.length !== transformedChunks.length) {
+      throw new Error(
+        "Mismatch in the number of detected sentences. " +
+        "Ensure that both texts contain the same number of sentence-like segments."
+      );
+    }
+  
+    // Pair them up
+    return originalChunks.map((chunk, i) => [chunk, transformedChunks[i]]);
+  }

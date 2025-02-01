@@ -3,11 +3,11 @@ export const SPEAKER_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" sty
 </svg>`;
 
 export const TOOLTIP_STYLES = `
-.jp-word {
+.language-lens-word {
     position: relative;
     cursor: help;
 }
-.jp-tooltip {
+.language-lens-tooltip {
     position: absolute;
     background: white;
     border: 1px solid #ccc;
@@ -24,13 +24,13 @@ export const TOOLTIP_STYLES = `
     left: 0;
     top: calc(100% + 5px);
 }
-.jp-word:hover .jp-tooltip {
+.language-lens-word:hover .language-lens-tooltip {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
     transition-delay: 0s;
 }
-.jp-tooltip::before {
+.language-lens-tooltip::before {
     content: '';
     position: absolute;
     left: -10px;
@@ -38,30 +38,30 @@ export const TOOLTIP_STYLES = `
     height: 20px;
     bottom: 100%;
 }
-.tooltip-original {
+.language-lens-tooltip-original {
     color: #666;
     font-style: italic;
     margin-bottom: 8px;
     padding-bottom: 8px;
     border-bottom: 1px solid #eee;
 }
-.tooltip-translations {
+.language-lens-tooltip-translations {
     display: flex;
     flex-direction: column;
     gap: 4px;
 }
-.translation-item {
+.language-lens-translation-item {
     display: flex;
     align-items: center;
     gap: 8px;
 }
-.translation-text {
+.language-lens-translation-text {
     font-weight: 500;
 }
-.translation-reading {
+.language-lens-translation-reading {
     color: #666;
 }
-.speak-icon {
+.language-lens-speak-icon {
     display: inline-flex;
     align-items: center;
     cursor: pointer;
@@ -69,7 +69,7 @@ export const TOOLTIP_STYLES = `
     transition: color 0.2s;
     margin-left: auto;
 }
-.speak-icon:hover {
+.language-lens-speak-icon:hover {
     color: #007bff;
 }
 `; 

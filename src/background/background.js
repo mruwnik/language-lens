@@ -1,32 +1,26 @@
 // background.js
-import { callLlmProvider, buildPartialTranslationPrompt } from '../lib/llmProviders.js';
+import { callLlmProvider, buildPartialTranslationPrompt, buildNewWordsPrompt } from '../lib/llmProviders.js';
 import { BEST_MODELS } from '../lib/constants.js';
 import { loadLlmSettings } from '../lib/settings.js';
-import { 
-  makeTranslationCacheKey, 
-  containsAnyWord, 
-} from '../lib/textProcessing.js';
-import { debounce } from '../lib/utils.js';
+import { containsAnyWord } from '../lib/textProcessing.js';
 import { 
   checkTokenLimits, 
   getTokenUsage,
   getDateKey,
   getMonthStartKey
 } from '../lib/tokenCounter.js';
-
-
-// Cache configuration
-const CACHE_MAX_SIZE = 1000; // Maximum number of translations to store
-const CACHE_EXPIRY_DAYS = 5;
-const CACHE_EXPIRY_MS = CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+import {
+  loadCache,
+  getCachedTranslation,
+  setCacheEntry,
+  cleanupCache,
+  saveCache,
+} from '../lib/translationCache.js';
 
 // Batch configuration
 const BATCH_SIZE = 1000; // characters per batch
 const BATCH_DELAY = 100; // ms between batches
 const MAX_RETRIES = 3;
-
-// Load cache from storage on startup
-let translationCache = {};
 
 // Constants for icon paths
 const ICONS = {
@@ -50,60 +44,19 @@ const ICONS = {
   }
 };
 
-async function loadCache() {
-  try {
-    const data = await browser.storage.local.get('translationCache');
-    if (!data.translationCache) {
-      translationCache = {};
-      return;
-    }
-
-    // Filter out expired entries and convert to array for sorting
-    const now = Date.now();
-    const entries = Object.entries(data.translationCache)
-      .filter(([_, entry]) => now - entry.timestamp < CACHE_EXPIRY_MS)
-      .sort((a, b) => b[1].timestamp - a[1].timestamp); // Sort by newest first
-
-    // Keep only the newest MAX_SIZE entries
-    translationCache = entries
-      .slice(0, CACHE_MAX_SIZE)
-      .reduce((acc, [key, value]) => {
-        acc[key] = value;
-        return acc;
-      }, {});
-
-    // If we filtered anything out, save the cleaned cache
-    if (Object.keys(translationCache).length < Object.keys(data.translationCache).length) {
-      saveCache();
-    }
-  } catch (err) {
-    console.error('Failed to load translation cache:', err);
-    translationCache = {};
-  }
-}
-
-// Save cache to storage (debounced)
-const saveCache = debounce(async () => {
-  try {
-    await browser.storage.local.set({ translationCache });
-  } catch (err) {
-    console.error('Failed to save translation cache:', err);
-  }
-}, 1000);
-
 const batchSentences = (sentences) => {
   const batches = [];
   let currentBatch = [];
   let currentSize = 0;
 
-  sentences.forEach(sentence => {
-    const size = sentence.text.length;
+  Object.entries(sentences).forEach(([id, text]) => {
+    const size = text.length;
     if (currentSize + size > BATCH_SIZE && currentBatch.length > 0) {
       batches.push(currentBatch);
       currentBatch = [];
       currentSize = 0;
     }
-    currentBatch.push(sentence);
+    currentBatch.push({ id, text });
     currentSize += size;
   });
 
@@ -111,10 +64,11 @@ const batchSentences = (sentences) => {
     batches.push(currentBatch);
   }
 
+  console.log('batches', batches);
   return batches;
 };
 
-const translateBatch = async (batch, relevantWords, settings, now) => {
+const translateBatch = async (batch, relevantWords, settings) => {
   const translationInput = batch
     .map(s => `<s id="${s.id}">${s.text}</s>`)
     .join('\n');
@@ -152,128 +106,116 @@ const translateBatch = async (batch, relevantWords, settings, now) => {
   translatedSentences.forEach(translation => {
     const sentence = batch.find(s => s.id === translation.id);
     if (sentence) {
-      const cacheKey = makeTranslationCacheKey(sentence.text, relevantWords);
-      translationCache[cacheKey] = {
-        text: translation.text,
-        timestamp: now
-      };
+      setCacheEntry(sentence.text, relevantWords, translation.text);
     }
   });
+  await saveCache();
 
   return translatedSentences;
 };
+
+const getCached = (sentences, relevantWords) => {
+    const wordsMap = Object.fromEntries(
+        relevantWords.map(w => [w.en.toLowerCase(), w.ruby && !w.useKanji ? w.ruby : w.native])
+    );
+
+    const getWord = text => wordsMap[text.toLowerCase().trim()] || getCachedTranslation(text, relevantWords);
+
+    const cached = Object.fromEntries(
+        Object.entries(sentences)
+            .map(([id, text]) => [id, getWord(text)])
+            .filter(([, text]) => text)
+    );
+
+    const uncached = Object.fromEntries(
+        Object.entries(sentences).filter(([id]) => !cached[id])
+    );
+
+    return { cached, uncached };
+}
+
+
+const getBatch = async (batch, relevantWords, settings, now) => {
+  let retries = 0;
+  let success = false;
+  let translations = {};
+  while (!success && retries < MAX_RETRIES) {
+      try {
+          const batchTranslations = await translateBatch(batch, relevantWords, settings, now);
+          translations = {
+              ...translations,
+              ...Object.fromEntries(batchTranslations.map(t => [t.id, t.text]))
+          };
+          success = true;
+          
+          // Add delay between batches if there are more
+          if (batches.length > 1) {
+              await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+          }
+      } catch (err) {
+          retries++;
+          if (retries === MAX_RETRIES) {
+              console.error(`Failed to translate batch after ${MAX_RETRIES} retries:`, err);
+              // On final retry failure, add untranslated sentences
+              translations = {
+                  ...translations,
+                  ...Object.fromEntries(batch.map(s => [s.id, s.text]))
+              };
+          } else {
+              // Exponential backoff between retries
+              await new Promise(resolve => setTimeout(resolve, BATCH_DELAY * Math.pow(2, retries)));
+          }
+      }
+  }
+  return translations;
+}
 
 const handlePartialTranslate = async (sentences, knownWords) => {
     // Filter to relevant words first, using word boundaries
     const relevantWords = knownWords.filter(word => 
         word.en && word.native && // Only use words with both English and native translations
-        sentences.some(s => containsAnyWord(s.text, [word.en]))
+        Object.values(sentences).some(s => containsAnyWord(s, [word.en]))
     );
 
     if (!relevantWords.length) {
-        return { translations: sentences.map(s => ({ id: s.id, text: s.text })) };
+        return { translations: {} };
     }
 
     // Check cache for each sentence
     const now = Date.now();
-    const uncachedSentences = [];
-    const translations = [];
 
-    for (const sentence of sentences) {
-        const cacheKey = makeTranslationCacheKey(sentence.text, relevantWords);
-        const cached = translationCache[cacheKey];
-
-        if (cached && now - cached.timestamp < CACHE_EXPIRY_MS) {
-            translations.push({
-                id: sentence.id,
-                text: cached.text
-            });
-        } else {
-            uncachedSentences.push(sentence);
-        }
-    }
-
+    const { cached, uncached: uncachedSentences } = getCached(sentences, relevantWords);
     // If all sentences were cached, return immediately
-    if (uncachedSentences.length === 0) {
-        return Promise.resolve({ translations });
+    if (Object.keys(uncachedSentences).length === 0) {
+        return { translations: cached };
     }
 
-    try {
-        // Load settings including provider, model, and API key
-        const settings = await loadLlmSettings();
+    // Load settings including provider, model, and API key
+    const settings = await loadLlmSettings();
         
-        if (!settings.apiKey) {
-            console.warn(`No API key found for provider: ${settings.llmProvider}`);
-            return { 
-                translations: [
-                    ...translations,
-                    ...uncachedSentences.map(s => ({ id: s.id, text: s.text }))
-                ]
-            };
-        }
+    if (!settings.apiKey) {
+        console.warn(`No API key found for provider: ${settings.llmProvider}`);
+        return { translations: { ...cached, ...uncachedSentences } };
+    }
 
-        // Split uncached sentences into batches
-        const batches = batchSentences(uncachedSentences);
-        
-        // Process each batch with retries and delays
+    // Process each batch with retries and delays
+    const batches = batchSentences(uncachedSentences);
+    let translations = {};
+    try {
         for (const batch of batches) {
-            let retries = 0;
-            let success = false;
-            
-            while (!success && retries < MAX_RETRIES) {
-                try {
-                    const batchTranslations = await translateBatch(batch, relevantWords, settings, now);
-                    translations.push(...batchTranslations);
-                    success = true;
-                    
-                    // Add delay between batches if there are more
-                    if (batches.length > 1) {
-                        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
-                    }
-                } catch (err) {
-                    retries++;
-                    if (retries === MAX_RETRIES) {
-                        console.error(`Failed to translate batch after ${MAX_RETRIES} retries:`, err);
-                        // On final retry failure, add untranslated sentences
-                        translations.push(...batch.map(s => ({ id: s.id, text: s.text })));
-                    } else {
-                        // Exponential backoff between retries
-                        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY * Math.pow(2, retries)));
-                    }
-                }
+            try {
+                const batchTranslations = await getBatch(batch, relevantWords, settings, now);
+                translations = { ...translations, ...batchTranslations };
+            } catch (err) {
+                console.error('Error in getBatch:', err);
+                translations = { ...translations, ...batch };
             }
         }
-
-        await cleanupCache();
-        return { translations };
     } catch (err) {
-        console.error("Error in PARTIAL_TRANSLATE:", err);
-        return { 
-            translations: [
-                ...translations,
-                ...uncachedSentences.map(s => ({ id: s.id, text: s.text }))
-            ]
-        };
+        console.error('Error in handlePartialTranslate:', err);
     }
-};
-
-const buildNewWordsPrompt = (currentWords, language) => {
-    const ruby = language === 'ja' ? ', "ruby": "reading"' : '';
-    const format = `{ "native": "translation"${ruby} }`;
-    const example = language === 'ja' ? '{"girl": {"native": "彼女", "ruby": "かのじょ"}}' : `{"${currentWords[0].en}": {"native": "${currentWords[0].native}"}}`;
-
-    return `Based on the following list of known words and their usage frequency, suggest 10 *new* words that would be useful to learn next. The words should be related to the existing vocabulary but gradually increase in complexity.
-
-Current vocabulary:
-${currentWords.map(w => `${w.en} (${w.viewCount})`).join('\n')}
-
-Please respond with a JSON object mapping English words to their translations, in this format:
-<json>{ "word": ${format} }</json>
-  
-Example:
-<json>${example}</json>
-
-Make sure to only suggest words that are not already in the list. This is very important, so please make sure to check the list before suggesting a word.`;
+    await cleanupCache();
+    return { translations };
 };
 
 const initializeNewWord = (word) => {
@@ -332,20 +274,6 @@ const handleRequestNewWords = async ({ currentWords, language }) => {
     } catch (err) {
         console.error("Error in REQUEST_NEW_WORDS:", err);
     }
-};
-
-const cleanupCache = async () => {
-    const entries = Object.entries(translationCache);
-    if (entries.length > CACHE_MAX_SIZE) {
-        const sortedEntries = entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
-        translationCache = sortedEntries
-            .slice(0, CACHE_MAX_SIZE)
-            .reduce((acc, [key, value]) => {
-                acc[key] = value;
-                return acc;
-            }, {});
-    }
-    saveCache();
 };
 
 // Update extension icon based on API key and token limits

@@ -1,4 +1,4 @@
-import { containsAnyWord, splitIntoSentences } from '../lib/textProcessing.js';
+import { containsAnyWord} from '../lib/textProcessing.js';
 
 // Check if text contains any of the known words
 export const containsKnownWord = (text, knownWords) => {

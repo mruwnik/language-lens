@@ -4,7 +4,7 @@ import {
     splitIntoSentences, 
     containsAnyWord
 } from '../lib/textProcessing.js';
-import { replaceNode, collectTextNodes, processedNodes } from './dom.js';
+import { replaceNode, collectTextNodes, processedNodes, processTextNodes } from './dom.js';
 import { TranslationState, MIN_KANJI_VIEW_COUNT } from './state.js';
 import { shouldProcessDomain } from '../lib/settings.js';
 
@@ -27,74 +27,31 @@ const addStyles = () => {
     document.head.appendChild(style);
 };
 
-const processTextNodes = (nodes) => {
-    let sentenceId = 0;
-    const uniqueSentences = new Map(); // text -> { id, nodes: Set(nodes) }
-
-    // Collect unique sentences while preserving node mapping
-    for (const node of nodes) {
-        const sentences = splitIntoSentences(node.text);
-        
-        sentences.forEach(s => {
-            const text = s.trim();
-            if (!text) return;
-
-            let sentenceData = uniqueSentences.get(text);
-            if (!sentenceData) {
-                const id = `s${sentenceId++}`;
-                sentenceData = { id, text, nodes: new Set() };
-                uniqueSentences.set(text, sentenceData);
-            }
-            sentenceData.nodes.add(node.node);
-        });
-    }
-
-    return Array.from(uniqueSentences.values()).map(({ id, text, nodes }) => ({
-        id,
-        text,
-        nodes: Array.from(nodes)
-    }));
-};
-
-const translateAndReplace = async (state, sentences) => {
-    if (!sentences.length) return;
-    
-    const translations = await translateText(sentences, state.knownWords);
-    
+const translateAndReplace = async (state, sentences, translations) => {
     // Group sentences by node, handling multiple nodes per sentence
     const nodeMap = new Map();
     sentences.forEach(s => {
-        const translatedText = translations.find(t => t.id === s.id)?.text || s.text;
-        
+        s.nodes.filter(node => (node?.parentNode && translations[s.id] && node.textContent !== translations[s.id])).forEach(node => {
+            nodeMap.set(node, node.textContent.replace(s.text, translations[s.id]));
+        });
+    });
+
+    // Replace text in each node
+    nodeMap.entries().forEach(([node, nodeTranslations]) => {
+        console.log(node, nodeTranslations, node.textContent);
+        replaceNode(state, node, nodeTranslations, state.knownWords);
+    });
+
+    sentences.filter(s => translations[s.id]).forEach(s => {
         // Find English words that were translated in this text
         [...state.knownWords.entries()]
             .filter(([en, word]) => word.native && containsAnyWord(s.text, [en]))
             .forEach(([en, word]) => {
                 state.updateWordView(word, en);
             });
-
-        s.nodes.forEach(node => {
-            if (!nodeMap.has(node)) {
-                nodeMap.set(node, []);
-            }
-            nodeMap.get(node).push({
-                original: s.text,
-                translated: translatedText
-            });
-        });
     });
-
     // Save updated word counts to storage
     await state.saveToStorage();
-
-    // Replace text in each node
-    for (const [node, nodeTranslations] of nodeMap.entries()) {
-        nodeTranslations.forEach(({ original, translated }) => {
-            if (translated !== original) {
-                replaceNode(state, node, original, translated, state.knownWords);
-            }
-        });
-    }
 };
 
 // Main processing
@@ -103,7 +60,10 @@ const processNode = async (state, node) => {
     if (textNodes.length === 0) return;
     
     const sentences = processTextNodes(textNodes);
-    await translateAndReplace(state, sentences);
+    if (!sentences.length) return;
+
+    const translations = await translateText(sentences, state.knownWords);
+    await translateAndReplace(state, sentences, translations);
 };
 
 // Intersection Observer setup
@@ -276,7 +236,7 @@ browser.storage.onChanged.addListener(async (changes, area) => {
 });
 
 async function translateText(sentences, knownWords) {
-    if (!sentences?.length || !knownWords?.size) return [];
+    if (!Object.keys(sentences).length || !knownWords?.size) return {};
 
     // Convert Map to array of serializable word objects
     const wordArray = [...knownWords.entries()].map(([en, data]) => ({
@@ -288,32 +248,26 @@ async function translateText(sentences, knownWords) {
 
     // Only translate sentences containing known words
     const englishWords = wordArray.map(w => w.en);
-    const relevantSentences = sentences.filter(s => 
-        containsAnyWord(s.text, englishWords)
+    const relevantSentences = Object.fromEntries(
+        sentences.filter(s => containsAnyWord(s.text, englishWords))
+                 .map(({ id, text }) => [id, text])
     );
 
-    if (relevantSentences.length === 0) {
-        return sentences.map(s => ({ id: s.id, text: s.text }));
+    if (Object.keys(relevantSentences).length === 0) {
+        return relevantSentences;
     }
 
     try {
-        const response = await browser.runtime.sendMessage({
+        const { translations } = await browser.runtime.sendMessage({
             type: "PARTIAL_TRANSLATE",
             payload: {
-                sentences: relevantSentences.map(({ id, text }) => ({ id, text })),
+                sentences: relevantSentences,
                 knownWords: wordArray
             }
         });
+        console.log('translations', translations);
 
-        // Merge translations with original sentences
-        const translationMap = new Map(
-            (response?.translations ?? []).map(t => [t.id, t.text])
-        );
-
-        return sentences.map(s => ({
-            id: s.id,
-            text: translationMap.get(s.id) ?? s.text
-        }));
+        return translations;
     } catch (err) {
         console.error("Translation failed:", err);
         return sentences.map(s => ({ id: s.id, text: s.text }));
