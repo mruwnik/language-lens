@@ -23,7 +23,6 @@ export function getDisplayText(wordData, settings = {}) {
     const allKanjiSeen = [...wordData.native]
         .filter(char => char.match(/[\u4e00-\u9faf]/))
         .every(kanji => (wordData.kanjiViewCounts?.[kanji] || 0) >= minViews);
-    console.log('allKanjiSeen', allKanjiSeen, wordData.native, wordData.ruby, wordData.kanjiViewCounts, [...wordData.native].filter(char => char.match(/[\u4e00-\u9faf]/)));
 
     if (allKanjiSeen) {
         return wordData.native;

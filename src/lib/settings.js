@@ -20,23 +20,23 @@ export async function loadLlmSettings() {
     'domainMode',
     'domainList'
   ]);
-  const provider = data.llmProvider || DEFAULT_PROVIDER;
-  const model = data.llmModel || DEFAULT_MODELS[provider];
-  const apiKey = data[`${provider}ApiKey`];
+  const llmProvider = data.llmProvider || DEFAULT_PROVIDER;
+  const llmModel = data.llmModel || DEFAULT_MODELS[llmProvider];
+  const apiKey = data[`${llmProvider}ApiKey`];
   const dailyTokenLimit = data.dailyTokenLimit || 0;
   const monthlyTokenLimit = data.monthlyTokenLimit || 0;
   const domainMode = data.domainMode || 'blacklist';
   const domainList = data.domainList || [];
-  return { provider, model, apiKey, dailyTokenLimit, monthlyTokenLimit, domainMode, domainList };
+  return { llmProvider, llmModel, apiKey, dailyTokenLimit, monthlyTokenLimit, domainMode, domainList };
 }
 
 /**
  * Save LLM settings to storage
  */
-export async function saveLlmSettings({ provider, model, apiKey, dailyTokenLimit, monthlyTokenLimit, domainMode, domainList }) {
+export async function saveLlmSettings({ llmProvider, llmModel, apiKey, dailyTokenLimit, monthlyTokenLimit, domainMode, domainList }) {
   const updates = {
-    llmProvider: provider,
-    llmModel: model,
+    llmProvider,
+    llmModel,
     dailyTokenLimit: dailyTokenLimit || 0,
     monthlyTokenLimit: monthlyTokenLimit || 0,
     domainMode: domainMode || 'blacklist',
@@ -45,7 +45,7 @@ export async function saveLlmSettings({ provider, model, apiKey, dailyTokenLimit
 
   // Only update the API key if one is provided
   if (apiKey) {
-    updates[`${provider}ApiKey`] = apiKey;
+    updates[`${llmProvider}ApiKey`] = apiKey;
   }
 
   await browser.storage.local.set(updates);
@@ -112,7 +112,6 @@ export function matchesUrlPattern(url, pattern) {
  */
 export async function shouldProcessDomain(url) {
   const settings = await loadLlmSettings();
-  console.log('Settings:', settings);
   if (!settings.domainList || settings.domainList.length === 0) {
     return true;
   }

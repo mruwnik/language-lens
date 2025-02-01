@@ -1,5 +1,5 @@
 import { trackTokens } from './tokenCounter.js';
-import { LLM_PROVIDERS } from './constants.js';
+import { LLM_PROVIDERS, BEST_MODELS } from './constants.js';
 
 // LLM Provider Configuration
 export const DEFAULT_PROVIDER = LLM_PROVIDERS.OPENAI;

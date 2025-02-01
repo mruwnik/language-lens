@@ -15,6 +15,12 @@ export const DEFAULT_MODELS = {
   [LLM_PROVIDERS.OPENWEBUI]: 'default',
   [LLM_PROVIDERS.GOOGLE]: 'gemini-pro'
 };
+export const BEST_MODELS = {
+  [LLM_PROVIDERS.OPENAI]: 'gpt-4o',
+  [LLM_PROVIDERS.ANTHROPIC]: 'claude-3-5-sonnet-latest',
+  [LLM_PROVIDERS.OPENWEBUI]: 'default',
+  [LLM_PROVIDERS.GOOGLE]: 'gemini-pro'
+};
 
 // Available models per provider
 export const AVAILABLE_MODELS = {

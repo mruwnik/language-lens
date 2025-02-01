@@ -395,15 +395,15 @@ async function updateModelOptions(provider) {
 
 // Load and save LLM settings
 async function initializeLlmSettings(settings, { llmProvider, LLMDetails }) {
-  llmProvider.value = settings.provider;
+  llmProvider.value = settings.llmProvider;
 
-  await updateModelOptions(settings.provider);
+  await updateModelOptions(settings.llmProvider);
 
   if (!settings.apiKey) {
     LLMDetails.setAttribute('open', '');
   }
-  if (settings.model) {
-    llmModel.value = settings.model;
+  if (settings.llmModel) {
+    llmModel.value = settings.llmModel;
   }
   if (settings.dailyTokenLimit) {
     document.getElementById("dailyTokenLimit").value = (settings.dailyTokenLimit / 1_000_000).toFixed(4);
@@ -419,45 +419,30 @@ async function initializeLlmSettings(settings, { llmProvider, LLMDetails }) {
   }
 }
 
-async function saveLlmSettingsHandler() {
-  const provider = document.getElementById("llmProvider").value;
-  const model = document.getElementById("llmModel").value;
+// Auto-save LLM settings on change
+const saveLlmSettingsDebounced = debounce(async () => {
+  const llmProvider = document.getElementById("llmProvider").value;
+  const llmModel = document.getElementById("llmModel").value;
   const apiKey = document.getElementById("apiKey").value.trim();
   const dailyTokenLimit = parseFloat(document.getElementById("dailyTokenLimit").value) * 1_000_000 || 0;
   const monthlyTokenLimit = parseFloat(document.getElementById("monthlyTokenLimit").value) * 1_000_000 || 0;
-  const domainMode = document.getElementById("domainMode").value;
-  const domainList = document.getElementById("domainList").value.trim();
-
-  if (!apiKey) {
-    alert(MESSAGES.API_KEY_REQUIRED);
-    return;
-  }
+  const currentSettings = await loadLlmSettings();
 
   try {
     await saveLlmSettings({ 
-      provider, 
-      model, 
+      ...currentSettings,
+      llmProvider, 
+      llmModel, 
       apiKey, 
       dailyTokenLimit, 
       monthlyTokenLimit,
-      domainMode,
-      domainList
     });
     // Notify background script that settings have changed
     await browser.runtime.sendMessage({ type: "SETTINGS_UPDATED" });
-    alert("Settings saved successfully!");
   } catch (error) {
     console.error("Error saving settings:", error);
-    alert("Error saving settings. Please try again.");
   }
-}
-
-/**
- * Format number with commas
- */
-function formatNumber(num) {
-  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-}
+}, 500);
 
 /**
  * Format token limit for display (in millions)
@@ -539,7 +524,7 @@ async function updateLimitIndicators(model, todayTotal, monthTotal) {
   }
 
   // Update alerts display
-  limitAlerts.outerHTML = alerts.length == 0 ? '' : alerts
+  limitAlerts.innerHTML = alerts.length == 0 ? '' : alerts
     .map(alert => `
       <div class="limit-alert ${alert.type}">
         <span class="limit-alert-icon">${alert.icon}</span>
@@ -763,13 +748,35 @@ async function handleSuggestWords(currentLang, currentLangData) {
               No more suggestions available
             </div>
           `}
-          <button class="close-modal">Close</button>
+          <div class="modal-buttons">
+            <button class="modal-button suggest-more">Suggest More</button>
+            <button class="modal-button close-modal">Close</button>
+          </div>
         </div>
       `;
 
       // Re-add event listeners
-      modal.querySelector('.close-modal').addEventListener('click', () => {
+      modal.querySelector('.close-modal').addEventListener('click', async () => {
         modal.remove();
+        // Refresh word list after closing
+        currentLangData = await loadLanguageData(currentLang);
+        renderWords(currentLang, currentLangData);
+      });
+
+      modal.querySelector('.suggest-more').addEventListener('click', async () => {
+        const suggestMoreBtn = modal.querySelector('.suggest-more');
+        suggestMoreBtn.disabled = true;
+        suggestMoreBtn.textContent = 'Getting suggestions...';
+        
+        try {
+          const newSuggestions = await suggestRelatedWords(currentLang, currentLangData);
+          suggestions = newSuggestions;
+          renderSuggestions();
+        } catch (error) {
+          alert(error.message || MESSAGES.SUGGESTION_ERROR);
+          suggestMoreBtn.disabled = false;
+          suggestMoreBtn.textContent = 'Suggest More';
+        }
       });
 
       modal.querySelectorAll('.use-suggestion').forEach((btn, i) => {
@@ -821,13 +828,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     wordSearch: document.getElementById("wordSearch"),
     llmProvider: document.getElementById("llmProvider"),
     llmModel: document.getElementById("llmModel"),
-    saveSettingsBtn: document.getElementById("saveSettings"),
     timeRange: document.getElementById("timeRange"),
     LLMDetails: document.getElementById("LLMDetails"),
     apiKey: document.getElementById("apiKey"),
     tokenUsageDetails: document.getElementById("tokenUsageDetails"),
     domainMode: document.getElementById("domainMode"),
-    domainList: document.getElementById("domainList")
+    domainList: document.getElementById("domainList"),
+    dailyTokenLimit: document.getElementById("dailyTokenLimit"),
+    monthlyTokenLimit: document.getElementById("monthlyTokenLimit")
   };
 
   // Initialize LLM settings
@@ -838,7 +846,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveDomainSettings = debounce(async () => {
     const domainMode = elements.domainMode.value;
     const domainList = elements.domainList.value.trim().split('\n').map(line => line.trim().replace(/^https?:\/\//, '')).filter(Boolean);
-    
+    const settings = await loadLlmSettings();  
     try {
       await saveLlmSettings({ 
         ...settings,
@@ -855,7 +863,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   elements.domainMode.addEventListener("change", saveDomainSettings);
   elements.domainList.addEventListener("input", saveDomainSettings);
 
-  // Provider change handler
+  // Auto-save LLM settings on change
+  elements.llmProvider.addEventListener("change", saveLlmSettingsDebounced);
+  elements.llmModel.addEventListener("change", saveLlmSettingsDebounced);
+  elements.apiKey.addEventListener("input", saveLlmSettingsDebounced);
+  elements.dailyTokenLimit.addEventListener("input", saveLlmSettingsDebounced);
+  elements.monthlyTokenLimit.addEventListener("input", saveLlmSettingsDebounced);
+
+  // Provider change handler - keep this separate since it needs to update models
   elements.llmProvider.addEventListener("change", async () => {
     await updateModelOptions(elements.llmProvider.value);
     const model = elements.llmModel.value;
@@ -863,9 +878,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateTokenHistogram(model, parseInt(elements.timeRange?.value || 7));
     }
   });
-
-  // Save settings handler
-  elements.saveSettingsBtn.addEventListener("click", saveLlmSettingsHandler);
 
   // Load existing data
   const data = await browser.storage.local.get([
@@ -962,8 +974,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Initial histogram update - wait for settings to be loaded
-  if (settings?.model) {
-    await updateTokenHistogram(settings.model, 7);
+  if (settings?.llmModel) {
+    await updateTokenHistogram(settings.llmModel, 7);
   }
 
   // Initial setup

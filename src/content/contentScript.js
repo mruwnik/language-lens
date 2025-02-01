@@ -8,6 +8,14 @@ import { replaceNode, collectTextNodes, processedNodes } from './dom.js';
 import { TranslationState, MIN_KANJI_VIEW_COUNT } from './state.js';
 import { shouldProcessDomain } from '../lib/settings.js';
 
+
+const shouldSkip = async () => {
+    const domain = window.location.hostname;
+    const path = window.location.pathname.slice(1); // Remove leading slash
+    const url = path ? `${domain}/${path}` : domain;
+    return await shouldProcessDomain(url);
+}
+
 // Add styles to document
 const addStyles = () => {
     const style = document.createElement('style');
@@ -48,8 +56,6 @@ const translateAndReplace = async (state, sentences) => {
     if (!sentences.length) return;
     
     const translations = await translateText(sentences, state.knownWords);
-    console.log('translations', translations);
-    console.log('sentences', sentences);
     
     // Group sentences by node, handling multiple nodes per sentence
     const nodeMap = new Map();
@@ -176,15 +182,7 @@ const checkAndRequestNewWords = async (state) => {
 
 const initialize = async () => {
     try {
-        // Check if we should process this URL
-        const domain = window.location.hostname;
-        const path = window.location.pathname.slice(1); // Remove leading slash
-        const url = path ? `${domain}/${path}` : domain;
-        console.log('URL:', url);
-        console.log('Domain:', domain);
-        const shouldProcess = await shouldProcessDomain(url);
-        console.log('Should process:', shouldProcess);
-        if (!shouldProcess) {
+        if (await shouldSkip()) {
             console.log('URL is filtered out:', url);
             return;
         }
@@ -244,7 +242,7 @@ const initialize = async () => {
 
 // Listen for storage changes
 browser.storage.onChanged.addListener(async (changes, area) => {
-    if (area !== 'local') return;
+    if (area !== 'local' || await shouldSkip()) return;
 
     try {
         let needsReprocess = false;

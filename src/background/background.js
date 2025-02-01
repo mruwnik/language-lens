@@ -1,10 +1,10 @@
 // background.js
 import { callLlmProvider, buildPartialTranslationPrompt } from '../lib/llmProviders.js';
+import { BEST_MODELS } from '../lib/constants.js';
 import { loadLlmSettings } from '../lib/settings.js';
 import { 
   makeTranslationCacheKey, 
   containsAnyWord, 
-  splitIntoSentences,
 } from '../lib/textProcessing.js';
 import { debounce } from '../lib/utils.js';
 import { 
@@ -13,7 +13,7 @@ import {
   getDateKey,
   getMonthStartKey
 } from '../lib/tokenCounter.js';
-import { LLM_PROVIDERS } from '../lib/constants.js';
+
 
 // Cache configuration
 const CACHE_MAX_SIZE = 1000; // Maximum number of translations to store
@@ -124,7 +124,7 @@ const translateBatch = async (batch, relevantWords, settings, now) => {
   const estimatedOutputTokens = Math.ceil(translationInput.length / 2); // Assume output is roughly half the input
 
   // Check token limits
-  const limitCheck = await checkTokenLimits(settings.model, estimatedInputTokens, estimatedOutputTokens);
+  const limitCheck = await checkTokenLimits(settings.llmModel, estimatedInputTokens, estimatedOutputTokens);
   if (!limitCheck.allowed) {
     throw new Error(limitCheck.reason);
   }
@@ -132,8 +132,8 @@ const translateBatch = async (batch, relevantWords, settings, now) => {
   const translated = await callLlmProvider(
     buildPartialTranslationPrompt(translationInput, relevantWords),
     settings.apiKey, 
-    settings.provider,
-    settings.model
+    settings.llmProvider,
+    settings.llmModel
   );
 
   // Parse translated text back into sentences with IDs
@@ -203,7 +203,7 @@ const handlePartialTranslate = async (sentences, knownWords) => {
         const settings = await loadLlmSettings();
         
         if (!settings.apiKey) {
-            console.warn(`No API key found for provider: ${settings.provider}`);
+            console.warn(`No API key found for provider: ${settings.llmProvider}`);
             return { 
                 translations: [
                     ...translations,
@@ -262,18 +262,18 @@ const buildNewWordsPrompt = (currentWords, language) => {
     const format = `{ "native": "translation"${ruby} }`;
     const example = language === 'ja' ? '{"girl": {"native": "彼女", "ruby": "かのじょ"}}' : `{"${currentWords[0].en}": {"native": "${currentWords[0].native}"}}`;
 
-    return `Based on the following list of known words and their usage frequency, suggest 10 new words that would be useful to learn next. The words should be related to the existing vocabulary but gradually increase in complexity.
+    return `Based on the following list of known words and their usage frequency, suggest 10 *new* words that would be useful to learn next. The words should be related to the existing vocabulary but gradually increase in complexity.
 
 Current vocabulary:
-${currentWords.map(w => `${w.en} (seen ${w.viewCount} times)`).join('\n')}
+${currentWords.map(w => `${w.en} (${w.viewCount})`).join('\n')}
 
-Please respond with ONLY a JSON object mapping English words to their translations, in this format:
-{ "word": ${format} }
+Please respond with a JSON object mapping English words to their translations, in this format:
+<json>{ "word": ${format} }</json>
   
 Example:
-${example}
+<json>${example}</json>
 
-Please respond with ONLY a JSON object.`;
+Make sure to only suggest words that are not already in the list. This is very important, so please make sure to check the list before suggesting a word.`;
 };
 
 const initializeNewWord = (word) => {
@@ -296,7 +296,7 @@ const handleRequestNewWords = async ({ currentWords, language }) => {
         const settings = await loadLlmSettings();
         
         if (!settings.apiKey) {
-            console.warn(`No API key found for provider: ${settings.provider}`);
+            console.warn(`No API key found for provider: ${settings.llmProvider}`);
             return { newWords: {} };
         }
 
@@ -307,17 +307,21 @@ const handleRequestNewWords = async ({ currentWords, language }) => {
         const estimatedOutputTokens = Math.ceil(prompt.length / 2); // Assume output is roughly half the input
 
         // Check token limits
-        const limitCheck = await checkTokenLimits(settings.model, estimatedInputTokens, estimatedOutputTokens);
+        const model = BEST_MODELS[settings.llmProvider] || settings.llmModel;
+        const limitCheck = await checkTokenLimits(model, estimatedInputTokens, estimatedOutputTokens);
         if (!limitCheck.allowed) {
             return { newWords: {}, error: limitCheck.reason };
         }
 
-        const result = await callLlmProvider(prompt, settings.apiKey, settings.provider, settings.model);
-        
+        const result = await callLlmProvider(prompt, settings.apiKey, settings.llmProvider, model);
+        const jsonMatch = result.match(/<json>(.*?)<\/json>/s);
+        if (!jsonMatch) {
+            throw new Error('No JSON object found in the response');
+        }
+        const data = jsonMatch[1];
         try {
-            const newWords = JSON.parse(result);
+            const newWords = JSON.parse(data);
             if (typeof newWords !== 'object') throw new Error('Invalid response format');
-            
             // Initialize view counts and other metadata
             Object.values(newWords).forEach(initializeNewWord);
             return { newWords };
