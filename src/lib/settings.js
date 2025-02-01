@@ -16,25 +16,31 @@ export async function loadLlmSettings() {
     'anthropicApiKey',
     'googleApiKey',
     'dailyTokenLimit',
-    'monthlyTokenLimit'
+    'monthlyTokenLimit',
+    'domainMode',
+    'domainList'
   ]);
   const provider = data.llmProvider || DEFAULT_PROVIDER;
   const model = data.llmModel || DEFAULT_MODELS[provider];
   const apiKey = data[`${provider}ApiKey`];
   const dailyTokenLimit = data.dailyTokenLimit || 0;
   const monthlyTokenLimit = data.monthlyTokenLimit || 0;
-  return { provider, model, apiKey, dailyTokenLimit, monthlyTokenLimit };
+  const domainMode = data.domainMode || 'blacklist';
+  const domainList = data.domainList || [];
+  return { provider, model, apiKey, dailyTokenLimit, monthlyTokenLimit, domainMode, domainList };
 }
 
 /**
  * Save LLM settings to storage
  */
-export async function saveLlmSettings({ provider, model, apiKey, dailyTokenLimit, monthlyTokenLimit }) {
+export async function saveLlmSettings({ provider, model, apiKey, dailyTokenLimit, monthlyTokenLimit, domainMode, domainList }) {
   const updates = {
     llmProvider: provider,
     llmModel: model,
     dailyTokenLimit: dailyTokenLimit || 0,
-    monthlyTokenLimit: monthlyTokenLimit || 0
+    monthlyTokenLimit: monthlyTokenLimit || 0,
+    domainMode: domainMode || 'blacklist',
+    domainList: domainList || []
   };
 
   // Only update the API key if one is provided
@@ -65,4 +71,52 @@ export async function getAvailableModels(provider) {
   }
   
   return AVAILABLE_MODELS[provider] || [];
+}
+
+/**
+ * Check if a URL matches a pattern
+ * Supports wildcards in both domain and path parts
+ */
+export function matchesUrlPattern(url, pattern) {
+  // Split URL and pattern into domain and path parts
+  const [patternDomain, ...patternPathParts] = pattern.split('/');
+  const [urlDomain, ...urlPathParts] = url.split('/');
+  
+  // First check if domain matches
+  const domainPattern = patternDomain
+    .replace(/\./g, '\\.')
+    .replace(/\*/g, '.*');
+  const domainRegex = new RegExp(`^${domainPattern}$`);
+  if (!domainRegex.test(urlDomain)) {
+    return false;
+  }
+
+  // If no path in pattern, match whole domain
+  if (patternPathParts.length === 0) {
+    return true;
+  }
+
+  // Check path match
+  const patternPath = patternPathParts.join('/');
+  const urlPath = urlPathParts.join('/');
+
+  const pathPattern = patternPath
+    .replace(/\./g, '\\.')
+    .replace(/\*/g, '.*');
+  const pathRegex = new RegExp(`^${pathPattern}$`);
+  return pathRegex.test(urlPath);
+}
+
+/**
+ * Check if a URL should be processed based on current settings
+ */
+export async function shouldProcessDomain(url) {
+  const settings = await loadLlmSettings();
+  console.log('Settings:', settings);
+  if (!settings.domainList || settings.domainList.length === 0) {
+    return true;
+  }
+
+  const matches = settings.domainList.some(pattern => matchesUrlPattern(url, pattern));
+  return settings.domainMode === 'whitelist' ? matches : !matches;
 } 

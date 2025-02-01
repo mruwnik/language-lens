@@ -10,7 +10,14 @@ if (!fs.existsSync(distDir)) {
 }
 
 // Generate warning icons before building
-await import('./generate-warning-icons.js');
+(async function() {
+  try {
+    await import('./make-icons.js');
+  } catch (err) {
+    console.error('Failed to generate warning icons:', err);
+    process.exit(1);
+  }
+})();
 
 // Build the extension
 console.log('Building extension...');

@@ -10,6 +10,7 @@ import {
 import { DEFAULT_MODELS } from '../lib/constants.js';
 import { loadTokenCounts } from "../lib/tokenCounter.js";
 import { formatTooltip, getDisplayText, speakWord } from "../lib/wordDisplay.js";
+import { debounce } from '../lib/utils.js';
 
 console.log("Starting popup.js");
 
@@ -410,6 +411,12 @@ async function initializeLlmSettings(settings, { llmProvider, LLMDetails }) {
   if (settings.monthlyTokenLimit) {
     document.getElementById("monthlyTokenLimit").value = (settings.monthlyTokenLimit / 1_000_000).toFixed(4);
   }
+  if (settings.domainMode) {
+    document.getElementById("domainMode").value = settings.domainMode;
+  }
+  if (settings.domainList) {
+    document.getElementById("domainList").value = settings.domainList;
+  }
 }
 
 async function saveLlmSettingsHandler() {
@@ -418,6 +425,8 @@ async function saveLlmSettingsHandler() {
   const apiKey = document.getElementById("apiKey").value.trim();
   const dailyTokenLimit = parseFloat(document.getElementById("dailyTokenLimit").value) * 1_000_000 || 0;
   const monthlyTokenLimit = parseFloat(document.getElementById("monthlyTokenLimit").value) * 1_000_000 || 0;
+  const domainMode = document.getElementById("domainMode").value;
+  const domainList = document.getElementById("domainList").value.trim();
 
   if (!apiKey) {
     alert(MESSAGES.API_KEY_REQUIRED);
@@ -425,7 +434,15 @@ async function saveLlmSettingsHandler() {
   }
 
   try {
-    await saveLlmSettings({ provider, model, apiKey, dailyTokenLimit, monthlyTokenLimit });
+    await saveLlmSettings({ 
+      provider, 
+      model, 
+      apiKey, 
+      dailyTokenLimit, 
+      monthlyTokenLimit,
+      domainMode,
+      domainList
+    });
     // Notify background script that settings have changed
     await browser.runtime.sendMessage({ type: "SETTINGS_UPDATED" });
     alert("Settings saved successfully!");
@@ -809,11 +826,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     LLMDetails: document.getElementById("LLMDetails"),
     apiKey: document.getElementById("apiKey"),
     tokenUsageDetails: document.getElementById("tokenUsageDetails"),
+    domainMode: document.getElementById("domainMode"),
+    domainList: document.getElementById("domainList")
   };
 
   // Initialize LLM settings
   const settings = await loadLlmSettings();
   await initializeLlmSettings(settings, elements);
+
+  // Auto-save domain settings on change
+  const saveDomainSettings = debounce(async () => {
+    const domainMode = elements.domainMode.value;
+    const domainList = elements.domainList.value.trim().split('\n').map(line => line.trim().replace(/^https?:\/\//, '')).filter(Boolean);
+    
+    try {
+      await saveLlmSettings({ 
+        ...settings,
+        domainMode,
+        domainList
+      });
+      // Notify background script that settings have changed
+      await browser.runtime.sendMessage({ type: "SETTINGS_UPDATED" });
+    } catch (error) {
+      console.error("Error saving domain settings:", error);
+    }
+  }, 500);
+
+  elements.domainMode.addEventListener("change", saveDomainSettings);
+  elements.domainList.addEventListener("input", saveDomainSettings);
 
   // Provider change handler
   elements.llmProvider.addEventListener("change", async () => {
@@ -833,8 +873,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     "lastLanguage",
   ]);
 
-  if (data.openaiApiKey && elements.apiKeyInput) {
-    elements.apiKeyInput.value = data.openaiApiKey;
+  if (data.openaiApiKey && elements.apiKey) {
+    elements.apiKey.value = data.openaiApiKey;
   }
 
   // Set current language (default to Japanese if not set)

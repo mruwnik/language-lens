@@ -2,8 +2,8 @@ import { SPEAKER_ICON } from './styles.js';
 import { isVisible } from './utils.js';
 import { extractWords } from '../lib/textProcessing.js';
 import { speakWord } from '../lib/wordDisplay.js';
-// Cache for processed nodes
-export const processedNodes = new WeakSet();
+// Keep track of which nodes we've already processed
+export const processedNodes = new Set();
 
 // Simplify replaceNode function
 export const replaceNode = (state, node, originalText, html, knownWords) => {

@@ -301,6 +301,22 @@
       border-color: #80bdff;
       box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
     }
+    .setting-textarea {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      background: white;
+      width: 100%;
+      box-sizing: border-box;
+      resize: vertical;
+      font-family: monospace;
+    }
+    .setting-textarea:focus {
+      outline: none;
+      border-color: #80bdff;
+      box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+    }
     #saveSettings {
       background: #28a745;
       color: white;
@@ -566,6 +582,36 @@
     .limit-alert-icon {
       font-size: 16px;
     }
+    .domain-settings {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    #domainList {
+      min-height: 80px;
+    }
+    #domainFilterDetails[open] summary {
+      margin-bottom: 16px;
+      color: #007bff;
+    }
+    #domainFilterDetails summary:hover {
+      color: #0056b3;
+    }
+    .save-btn {
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      align-self: flex-start;
+      margin-top: 12px;
+    }
+    .save-btn:hover {
+      background: #218838;
+    }
   </style>
 </head>
 <body>
@@ -612,6 +658,27 @@
         </div>
       </div>
       <button id="saveSettings">Save Settings</button>
+    </details>
+  </div>
+
+  <div class="section">
+    <details id="domainFilterDetails">
+      <summary>Domain Filtering</summary>
+      <div class="domain-settings">
+        <div class="setting-group">
+          <label for="domainMode">Filter Mode</label>
+          <select id="domainMode" class="setting-select">
+            <option value="blacklist">Blacklist (block listed URLs)</option>
+            <option value="whitelist">Whitelist (only allow listed URLs)</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <label for="domainList">URL List</label>
+          <textarea id="domainList" class="setting-textarea" rows="4" placeholder="Enter one URL pattern per line, e.g:&#10;example.com&#10;*.example.org&#10;example.com/blog/*&#10;*.example.org/articles/123"></textarea>
+          <span class="setting-help">One URL pattern per line. Use * as wildcard. Examples:&#10;• example.com (matches whole domain)&#10;• *.example.org (matches all subdomains)&#10;• example.com/blog/* (matches all blog pages)&#10;• *.example.org/articles/* (matches articles on all subdomains)</span>
+        </div>
+      </div>
     </details>
   </div>
 
