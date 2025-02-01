@@ -415,7 +415,7 @@ async function initializeLlmSettings(settings, { llmProvider, LLMDetails }) {
     document.getElementById("domainMode").value = settings.domainMode;
   }
   if (settings.domainList) {
-    document.getElementById("domainList").value = settings.domainList;
+    document.getElementById("domainList").value = settings.domainList.join('\n');
   }
 }
 

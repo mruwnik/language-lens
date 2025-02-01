@@ -78,34 +78,9 @@ export async function getAvailableModels(provider) {
  * Supports wildcards in both domain and path parts
  */
 export function matchesUrlPattern(url, pattern) {
-  // Split URL and pattern into domain and path parts
-  const [patternDomain, ...patternPathParts] = pattern.split('/');
-  const [urlDomain, ...urlPathParts] = url.split('/');
-  
-  // First check if domain matches
-  const domainPattern = patternDomain
-    .replace(/\./g, '\\.')
-    .replace(/\*/g, '.*');
-  const domainRegex = new RegExp(`^${domainPattern}$`);
-  if (!domainRegex.test(urlDomain)) {
-    return false;
-  }
-
-  // If no path in pattern, match whole domain
-  if (patternPathParts.length === 0) {
-    return true;
-  }
-
-  // Check path match
-  const patternPath = patternPathParts.join('/');
-  const urlPath = urlPathParts.join('/');
-
-  const pathPattern = patternPath
-    .replace(/\./g, '\\.')
-    .replace(/\*/g, '.*');
-  const pathRegex = new RegExp(`^${pathPattern}$`);
-  return pathRegex.test(urlPath);
-}
+  const regexPattern = new RegExp(`^${pattern.replace(/\./g, '\\.').replace(/\*/g, '.*?')}$`);
+  return regexPattern.test(url);
+};
 
 /**
  * Check if a URL should be processed based on current settings

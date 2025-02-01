@@ -13,7 +13,11 @@ const shouldSkip = async () => {
     const domain = window.location.hostname;
     const path = window.location.pathname.slice(1); // Remove leading slash
     const url = path ? `${domain}/${path}` : domain;
-    return await shouldProcessDomain(url);
+    const shouldProcess = await shouldProcessDomain(url)
+    if (!shouldProcess) {
+        console.log('skipping', url);
+    }
+    return !shouldProcess;
 }
 
 // Add styles to document
@@ -183,7 +187,6 @@ const checkAndRequestNewWords = async (state) => {
 const initialize = async () => {
     try {
         if (await shouldSkip()) {
-            console.log('URL is filtered out:', url);
             return;
         }
 
