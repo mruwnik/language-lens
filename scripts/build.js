@@ -9,6 +9,9 @@ if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
 }
 
+// Generate warning icons before building
+await import('./generate-warning-icons.js');
+
 // Build the extension
 console.log('Building extension...');
 execSync('npm run build', { stdio: 'inherit' });

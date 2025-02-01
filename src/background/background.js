@@ -21,6 +21,22 @@ const MAX_RETRIES = 3;
 // Load cache from storage on startup
 let translationCache = {};
 
+// Constants for icon paths
+const ICONS = {
+  normal: {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  warning: {
+    "16": "icons/icon16-warning.png",
+    "32": "icons/icon32-warning.png",
+    "48": "icons/icon48-warning.png",
+    "128": "icons/icon128-warning.png"
+  }
+};
+
 async function loadCache() {
   try {
     const data = await browser.storage.local.get('translationCache');
@@ -295,18 +311,37 @@ const cleanupCache = async () => {
     saveCache();
 };
 
-// Update the message listener to use the new handlers
+// Update extension icon based on API key status
+async function updateExtensionIcon() {
+  const settings = await loadLlmSettings();
+  const hasApiKey = Boolean(settings.apiKey);
+  
+  await browser.action.setIcon({
+    path: hasApiKey ? ICONS.normal : ICONS.warning
+  });
+}
+
+// Initialize cache and icon on startup
+async function initialize() {
+  await loadCache();
+  await updateExtensionIcon();
+}
+
+// Update the message listener to handle settings changes
 browser.runtime.onMessage.addListener(async (request, sender) => {
-    switch (request.type) {
-        case "PARTIAL_TRANSLATE":
-            return handlePartialTranslate(request.payload.sentences, request.payload.knownWords);
-        case "REQUEST_NEW_WORDS":
-            return handleRequestNewWords(request.payload);
-        default:
-            console.warn(`Unknown message type: ${request.type}`);
-            return {};
-    }
+  switch (request.type) {
+    case "PARTIAL_TRANSLATE":
+      return handlePartialTranslate(request.payload.sentences, request.payload.knownWords);
+    case "REQUEST_NEW_WORDS":
+      return handleRequestNewWords(request.payload);
+    case "SETTINGS_UPDATED":
+      await updateExtensionIcon();
+      return {};
+    default:
+      console.warn(`Unknown message type: ${request.type}`);
+      return {};
+  }
 });
 
-// Initialize cache on extension load
-loadCache();
+// Initialize on extension load
+initialize();

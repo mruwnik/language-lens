@@ -6,6 +6,7 @@ import {
     getAvailableModels,
     loadLlmSettings,
     saveLlmSettings,
+    loadKey
 } from "../lib/settings.js";
 import { loadTokenCounts } from "../lib/tokenCounter.js";
 import { formatTooltip, getDisplayText, speakWord } from "../lib/wordDisplay.js";
@@ -373,7 +374,10 @@ export const updateFormPlaceholders = (
 // Update model options based on selected provider
 async function updateModelOptions(provider) {
   const llmModel = document.getElementById("llmModel");
+  const apiKey = document.getElementById("apiKey")
   llmModel.innerHTML = ""; // Clear existing options
+
+  apiKey.value = await loadKey(provider) || "";
 
   const models = await getAvailableModels(provider);
   models.forEach((model) => {
@@ -388,9 +392,8 @@ async function updateModelOptions(provider) {
 }
 
 // Load and save LLM settings
-async function initializeLlmSettings(settings, { llmProvider, apiKey, LLMDetails }) {
+async function initializeLlmSettings(settings, { llmProvider, LLMDetails }) {
   llmProvider.value = settings.provider;
-  apiKey.value = settings.apiKey || "";
 
   await updateModelOptions(settings.provider);
 
@@ -414,6 +417,8 @@ async function saveLlmSettingsHandler() {
 
   try {
     await saveLlmSettings({ provider, model, apiKey });
+    // Notify background script that settings have changed
+    await browser.runtime.sendMessage({ type: "SETTINGS_UPDATED" });
     alert("Settings saved successfully!");
   } catch (error) {
     console.error("Error saving settings:", error);

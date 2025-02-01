@@ -29,6 +29,11 @@ export const AVAILABLE_MODELS = {
 };
 
 
+export async function loadKey(provider) {
+  const key = `${provider}ApiKey`
+  const data = await browser.storage.local.get([key]);
+  return data[key]
+}
 /**
  * Load LLM settings from storage
  */
@@ -40,12 +45,10 @@ export async function loadLlmSettings() {
     'anthropicApiKey',
     'googleApiKey'
   ]);
-
-  return {
-    provider: data.llmProvider || DEFAULT_PROVIDER,
-    model: data.llmModel || DEFAULT_MODELS[data.llmProvider || DEFAULT_PROVIDER],
-    apiKey: data[`${data.llmProvider || DEFAULT_PROVIDER}ApiKey`]
-  };
+  const provider = data.llmProvider || DEFAULT_PROVIDER;
+  const model = data.llmModel || DEFAULT_MODELS[provider];
+  const apiKey = data[`${provider}ApiKey`];
+  return { provider, model, apiKey };
 }
 
 /**
