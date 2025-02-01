@@ -272,6 +272,23 @@
       font-size: 14px;
       color: #666;
     }
+    .setting-group input[type="number"] {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      background: white;
+    }
+    .setting-group input[type="number"]:focus {
+      outline: none;
+      border-color: #80bdff;
+      box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+    }
+    .setting-help {
+      font-size: 12px;
+      color: #666;
+      margin-top: -2px;
+    }
     .setting-select {
       padding: 8px 12px;
       border: 1px solid #ddd;
@@ -313,6 +330,27 @@
     .stat-item {
       display: flex;
       gap: 4px;
+    }
+    .limit-indicator {
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 8px;
+    }
+    .limit-indicator.warning {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+    }
+    .limit-indicator.danger {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .limit-indicator.ok {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
     }
     .token-histogram {
       height: 200px;
@@ -495,9 +533,44 @@
     .close-modal:hover {
       background: #5a6268;
     }
+    .limit-alerts {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 8px 16px;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      background: white;
+      border-bottom: 1px solid #eee;
+      min-height: 32px;
+    }
+    .limit-alert {
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .limit-alert.warning {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+    }
+    .limit-alert.danger {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .limit-alert-icon {
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
+  <div id="limitAlerts" class="limit-alerts"></div>
+
   <div class="section api-section">
     <details id="LLMDetails">
       <summary>LLM Settings</summary>
@@ -524,6 +597,18 @@
             <label for="apiKey">API Key</label>
             <input type="password" id="apiKey" placeholder="Enter API key..." autocomplete="off" spellcheck="false" />
           </div>
+
+          <div class="setting-group">
+            <label for="dailyTokenLimit">Daily Token Limit (in millions)</label>
+            <input type="number" id="dailyTokenLimit" placeholder="No limit" min="0" step="0.0001" />
+            <span class="setting-help">Total tokens per day in millions (e.g. 1.5432 = 1.5432M tokens). Leave empty for no limit.</span>
+          </div>
+
+          <div class="setting-group">
+            <label for="monthlyTokenLimit">Monthly Token Limit (in millions)</label>
+            <input type="number" id="monthlyTokenLimit" placeholder="No limit" min="0" step="0.0001" />
+            <span class="setting-help">Total tokens per month in millions (e.g. 5.1234 = 5.1234M tokens). Leave empty for no limit.</span>
+          </div>
         </div>
       </div>
       <button id="saveSettings">Save Settings</button>
@@ -543,6 +628,8 @@
           <div class="token-stats">
             <span class="stat-item">Input: <span id="totalInput">0</span></span>
             <span class="stat-item">Output: <span id="totalOutput">0</span></span>
+            <span id="dailyLimitIndicator" class="limit-indicator"></span>
+            <span id="monthlyLimitIndicator" class="limit-indicator"></span>
           </div>
         </div>
         <div class="token-histogram">

@@ -7,6 +7,13 @@ import {
   splitIntoSentences,
 } from '../lib/textProcessing.js';
 import { debounce } from '../lib/utils.js';
+import { 
+  checkTokenLimits, 
+  getTokenUsage,
+  getDateKey,
+  getMonthStartKey
+} from '../lib/tokenCounter.js';
+import { LLM_PROVIDERS } from '../lib/constants.js';
 
 // Cache configuration
 const CACHE_MAX_SIZE = 1000; // Maximum number of translations to store
@@ -34,6 +41,12 @@ const ICONS = {
     "32": "icons/icon32-warning.png",
     "48": "icons/icon48-warning.png",
     "128": "icons/icon128-warning.png"
+  },
+  danger: {
+    "16": "icons/icon16-danger.png",
+    "32": "icons/icon32-danger.png",
+    "48": "icons/icon48-danger.png",
+    "128": "icons/icon128-danger.png"
   }
 };
 
@@ -105,6 +118,16 @@ const translateBatch = async (batch, relevantWords, settings, now) => {
   const translationInput = batch
     .map(s => `<s id="${s.id}">${s.text}</s>`)
     .join('\n');
+
+  // Estimate tokens before making the call
+  const estimatedInputTokens = Math.ceil((translationInput.length + 500) / 4); // Add 500 chars for system prompt
+  const estimatedOutputTokens = Math.ceil(translationInput.length / 2); // Assume output is roughly half the input
+
+  // Check token limits
+  const limitCheck = await checkTokenLimits(settings.model, estimatedInputTokens, estimatedOutputTokens);
+  if (!limitCheck.allowed) {
+    throw new Error(limitCheck.reason);
+  }
 
   const translated = await callLlmProvider(
     buildPartialTranslationPrompt(translationInput, relevantWords),
@@ -278,6 +301,17 @@ const handleRequestNewWords = async ({ currentWords, language }) => {
         }
 
         const prompt = buildNewWordsPrompt(currentWords, language);
+        
+        // Estimate tokens
+        const estimatedInputTokens = Math.ceil((prompt.length + 500) / 4); // Add 500 chars for system prompt
+        const estimatedOutputTokens = Math.ceil(prompt.length / 2); // Assume output is roughly half the input
+
+        // Check token limits
+        const limitCheck = await checkTokenLimits(settings.model, estimatedInputTokens, estimatedOutputTokens);
+        if (!limitCheck.allowed) {
+            return { newWords: {}, error: limitCheck.reason };
+        }
+
         const result = await callLlmProvider(prompt, settings.apiKey, settings.provider, settings.model);
         
         try {
@@ -293,7 +327,6 @@ const handleRequestNewWords = async ({ currentWords, language }) => {
         }
     } catch (err) {
         console.error("Error in REQUEST_NEW_WORDS:", err);
-        return { newWords: {} };
     }
 };
 
@@ -311,14 +344,58 @@ const cleanupCache = async () => {
     saveCache();
 };
 
-// Update extension icon based on API key status
+// Update extension icon based on API key and token limits
 async function updateExtensionIcon() {
   const settings = await loadLlmSettings();
-  const hasApiKey = Boolean(settings.apiKey);
-  
-  await browser.action.setIcon({
-    path: hasApiKey ? ICONS.normal : ICONS.warning
-  });
+  if (!settings.apiKey) {
+    await browser.action.setIcon({ path: ICONS.warning });
+    await browser.action.setTitle({ title: 'Language Lens - API key required' });
+    return;
+  }
+
+  // Check token limits if they're set
+  if (settings.dailyTokenLimit || settings.monthlyTokenLimit) {
+    const today = getDateKey();
+    const monthStart = getMonthStartKey();
+    const todayUsage = await getTokenUsage(settings.model, today, today);
+    const monthUsage = await getTokenUsage(settings.model, monthStart, today);
+
+    const todayTotal = todayUsage.input + todayUsage.output;
+    const monthTotal = monthUsage.input + monthUsage.output;
+
+    let iconState = 'normal';
+    let title = 'Language Lens';
+
+    // Check daily limit
+    if (settings.dailyTokenLimit > 0) {
+      const dailyPercentage = (todayTotal / settings.dailyTokenLimit) * 100;
+      if (dailyPercentage >= 100) {
+        iconState = 'danger';
+        title = `Daily token limit exceeded (${Math.round(dailyPercentage)}%)`;
+      } else if (dailyPercentage >= 80) {
+        iconState = 'warning';
+        title = `Approaching daily token limit (${Math.round(dailyPercentage)}%)`;
+      }
+    }
+
+    // Check monthly limit - only update if more severe than daily
+    if (settings.monthlyTokenLimit > 0) {
+      const monthlyPercentage = (monthTotal / settings.monthlyTokenLimit) * 100;
+      if (monthlyPercentage >= 100 && iconState !== 'danger') {
+        iconState = 'danger';
+        title = `Monthly token limit exceeded (${Math.round(monthlyPercentage)}%)`;
+      } else if (monthlyPercentage >= 80 && iconState === 'normal') {
+        iconState = 'warning';
+        title = `Approaching monthly token limit (${Math.round(monthlyPercentage)}%)`;
+      }
+    }
+
+    await browser.action.setIcon({ path: ICONS[iconState] });
+    await browser.action.setTitle({ title });
+  } else {
+    await browser.action.setIcon({ path: ICONS.normal });
+    await browser.action.setTitle({ title: 'Language Lens' });
+  }
 }
 
 // Initialize cache and icon on startup
@@ -328,19 +405,25 @@ async function initialize() {
 }
 
 // Update the message listener to handle settings changes
-browser.runtime.onMessage.addListener(async (request, sender) => {
+browser.runtime.onMessage.addListener((request, sender) => {
+  let result = {};
   switch (request.type) {
     case "PARTIAL_TRANSLATE":
-      return handlePartialTranslate(request.payload.sentences, request.payload.knownWords);
+      result = handlePartialTranslate(request.payload.sentences, request.payload.knownWords);
+      break;
     case "REQUEST_NEW_WORDS":
-      return handleRequestNewWords(request.payload);
+      result = handleRequestNewWords(request.payload);
+      break;
     case "SETTINGS_UPDATED":
-      await updateExtensionIcon();
-      return {};
+    case "TOKEN_COUNT_UPDATED":
+      result = updateExtensionIcon().then(() => ({}));
+      break;
     default:
       console.warn(`Unknown message type: ${request.type}`);
-      return {};
+      return Promise.resolve({});
   }
+  updateExtensionIcon().then(() => ({}));
+  return result;
 });
 
 // Initialize on extension load

@@ -1,33 +1,4 @@
-import { LLM_PROVIDERS, DEFAULT_PROVIDER } from './llmProviders.js';
-
-// Default model configurations per provider
-export const DEFAULT_MODELS = {
-  [LLM_PROVIDERS.OPENAI]: 'gpt-4o-mini',
-  [LLM_PROVIDERS.ANTHROPIC]: 'claude-3-haiku-20240307',
-  [LLM_PROVIDERS.OPENWEBUI]: 'default',
-  [LLM_PROVIDERS.GOOGLE]: 'gemini-pro'
-};
-
-// Available models per provider
-export const AVAILABLE_MODELS = {
-  [LLM_PROVIDERS.OPENAI]: [
-    'gpt-4o-mini',
-    'gpt-3.5-turbo',
-  ],
-  [LLM_PROVIDERS.ANTHROPIC]: [
-    'claude-3-5-sonnet-latest',
-    'claude-3-5-haiku-latest',
-    'claude-3-sonnet-20240229',
-    'claude-3-haiku-20240307'
-  ],
-  [LLM_PROVIDERS.OPENWEBUI]: [
-    'default'  // This will be populated dynamically from the server
-  ],
-  [LLM_PROVIDERS.GOOGLE]: [
-    'gemini-pro'
-  ]
-};
-
+import { LLM_PROVIDERS, DEFAULT_PROVIDER, DEFAULT_MODELS, AVAILABLE_MODELS } from './constants.js';
 
 export async function loadKey(provider) {
   const key = `${provider}ApiKey`
@@ -43,21 +14,27 @@ export async function loadLlmSettings() {
     'llmModel',
     'openaiApiKey',
     'anthropicApiKey',
-    'googleApiKey'
+    'googleApiKey',
+    'dailyTokenLimit',
+    'monthlyTokenLimit'
   ]);
   const provider = data.llmProvider || DEFAULT_PROVIDER;
   const model = data.llmModel || DEFAULT_MODELS[provider];
   const apiKey = data[`${provider}ApiKey`];
-  return { provider, model, apiKey };
+  const dailyTokenLimit = data.dailyTokenLimit || 0;
+  const monthlyTokenLimit = data.monthlyTokenLimit || 0;
+  return { provider, model, apiKey, dailyTokenLimit, monthlyTokenLimit };
 }
 
 /**
  * Save LLM settings to storage
  */
-export async function saveLlmSettings({ provider, model, apiKey }) {
+export async function saveLlmSettings({ provider, model, apiKey, dailyTokenLimit, monthlyTokenLimit }) {
   const updates = {
     llmProvider: provider,
-    llmModel: model
+    llmModel: model,
+    dailyTokenLimit: dailyTokenLimit || 0,
+    monthlyTokenLimit: monthlyTokenLimit || 0
   };
 
   // Only update the API key if one is provided

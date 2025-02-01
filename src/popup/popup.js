@@ -2,12 +2,12 @@
 
 import { defaultDictionaries } from "../lib/defaultDictionaries.js";
 import {
-    DEFAULT_MODELS,
     getAvailableModels,
     loadLlmSettings,
     saveLlmSettings,
     loadKey
 } from "../lib/settings.js";
+import { DEFAULT_MODELS } from '../lib/constants.js';
 import { loadTokenCounts } from "../lib/tokenCounter.js";
 import { formatTooltip, getDisplayText, speakWord } from "../lib/wordDisplay.js";
 
@@ -22,6 +22,7 @@ export const MESSAGES = {
   API_KEY_ERROR: "Error saving API key. Please try again.",
   NO_WORD_TO_SUGGEST: "Please enter an English word first!",
   SUGGESTION_ERROR: "Error getting suggestions. Please try again.",
+  TOKEN_LIMIT_ERROR: "Token limit exceeded. Please try again later or adjust your limits.",
 };
 
 const KANJI_REGEX = /[\u4e00-\u9faf]/;
@@ -403,12 +404,20 @@ async function initializeLlmSettings(settings, { llmProvider, LLMDetails }) {
   if (settings.model) {
     llmModel.value = settings.model;
   }
+  if (settings.dailyTokenLimit) {
+    document.getElementById("dailyTokenLimit").value = (settings.dailyTokenLimit / 1_000_000).toFixed(4);
+  }
+  if (settings.monthlyTokenLimit) {
+    document.getElementById("monthlyTokenLimit").value = (settings.monthlyTokenLimit / 1_000_000).toFixed(4);
+  }
 }
 
 async function saveLlmSettingsHandler() {
   const provider = document.getElementById("llmProvider").value;
   const model = document.getElementById("llmModel").value;
   const apiKey = document.getElementById("apiKey").value.trim();
+  const dailyTokenLimit = parseFloat(document.getElementById("dailyTokenLimit").value) * 1_000_000 || 0;
+  const monthlyTokenLimit = parseFloat(document.getElementById("monthlyTokenLimit").value) * 1_000_000 || 0;
 
   if (!apiKey) {
     alert(MESSAGES.API_KEY_REQUIRED);
@@ -416,7 +425,7 @@ async function saveLlmSettingsHandler() {
   }
 
   try {
-    await saveLlmSettings({ provider, model, apiKey });
+    await saveLlmSettings({ provider, model, apiKey, dailyTokenLimit, monthlyTokenLimit });
     // Notify background script that settings have changed
     await browser.runtime.sendMessage({ type: "SETTINGS_UPDATED" });
     alert("Settings saved successfully!");
@@ -431,6 +440,29 @@ async function saveLlmSettingsHandler() {
  */
 function formatNumber(num) {
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/**
+ * Format token limit for display (in millions)
+ */
+function formatTokenLimit(num) {
+  if (!num) return "0";
+  return (num / 1_000_000).toFixed(4) + "M";
+}
+
+/**
+ * Get today's date in YYYY-MM-DD format
+ */
+function getDateKey() {
+  return new Date().toISOString().split('T')[0];
+}
+
+/**
+ * Get the first day of the current month in YYYY-MM-DD format
+ */
+function getMonthStartKey() {
+  const date = new Date();
+  return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
 }
 
 /**
@@ -455,6 +487,78 @@ function getLastNDays(n) {
 function formatDate(dateStr) {
   const date = new Date(dateStr);
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/**
+ * Update token limit indicators
+ */
+async function updateLimitIndicators(model, todayTotal, monthTotal) {
+  const settings = await loadLlmSettings();
+  const limitAlerts = document.getElementById("limitAlerts");
+  const alerts = [];
+
+  // Check daily limit
+  if (settings.dailyTokenLimit > 0) {
+    const dailyPercentage = (todayTotal / settings.dailyTokenLimit) * 100;
+    if (dailyPercentage >= 80) {
+      alerts.push({
+        type: dailyPercentage >= 100 ? 'danger' : 'warning',
+        text: `Daily token usage: ${Math.round(dailyPercentage)}% of ${formatTokenLimit(settings.dailyTokenLimit)}`,
+        icon: dailyPercentage >= 100 ? '⚠️' : '⚡'
+      });
+    }
+  }
+
+  // Check monthly limit
+  if (settings.monthlyTokenLimit > 0) {
+    const monthlyPercentage = (monthTotal / settings.monthlyTokenLimit) * 100;
+    if (monthlyPercentage >= 80) {
+      alerts.push({
+        type: monthlyPercentage >= 100 ? 'danger' : 'warning',
+        text: `Monthly token usage: ${Math.round(monthlyPercentage)}% of ${formatTokenLimit(settings.monthlyTokenLimit)}`,
+        icon: monthlyPercentage >= 100 ? '⚠️' : '⚡'
+      });
+    }
+  }
+
+  // Update alerts display
+  limitAlerts.outerHTML = alerts.length == 0 ? '' : alerts
+    .map(alert => `
+      <div class="limit-alert ${alert.type}">
+        <span class="limit-alert-icon">${alert.icon}</span>
+        ${alert.text}
+      </div>
+    `)
+    .join('');
+
+  // Also update the indicators in the token usage section
+  const dailyIndicator = document.getElementById("dailyLimitIndicator");
+  const monthlyIndicator = document.getElementById("monthlyLimitIndicator");
+
+  if (settings.dailyTokenLimit > 0) {
+    const dailyPercentage = (todayTotal / settings.dailyTokenLimit) * 100;
+    dailyIndicator.textContent = `Daily: ${Math.round(dailyPercentage)}%`;
+    dailyIndicator.className = "limit-indicator " + getLimitClass(dailyPercentage);
+  } else {
+    dailyIndicator.textContent = "";
+  }
+
+  if (settings.monthlyTokenLimit > 0) {
+    const monthlyPercentage = (monthTotal / settings.monthlyTokenLimit) * 100;
+    monthlyIndicator.textContent = `Monthly: ${Math.round(monthlyPercentage)}%`;
+    monthlyIndicator.className = "limit-indicator " + getLimitClass(monthlyPercentage);
+  } else {
+    monthlyIndicator.textContent = "";
+  }
+}
+
+/**
+ * Get the appropriate CSS class based on usage percentage
+ */
+function getLimitClass(percentage) {
+  if (percentage >= 100) return "danger";
+  if (percentage >= 80) return "warning";
+  return "ok";
 }
 
 /**
@@ -488,16 +592,30 @@ async function updateTokenHistogram(model, days = 7) {
   // Calculate totals
   let totalInput = 0;
   let totalOutput = 0;
+  let todayTotal = 0;
+  let monthTotal = 0;
+  const today = getDateKey();
+  const monthStart = getMonthStartKey();
 
-  // Create bars
   dates.forEach((date) => {
-    const dayDiv = document.createElement("div");
-    dayDiv.className = "histogram-day";
-
     const inputTokens = modelData.input[date] || 0;
     const outputTokens = modelData.output[date] || 0;
     totalInput += inputTokens;
     totalOutput += outputTokens;
+
+    // Calculate today's total
+    if (date === today) {
+      todayTotal = inputTokens + outputTokens;
+    }
+
+    // Calculate month's total
+    if (date >= monthStart) {
+      monthTotal += inputTokens + outputTokens;
+    }
+
+    // Create bars
+    const dayDiv = document.createElement("div");
+    dayDiv.className = "histogram-day";
 
     // Input bar
     const inputBar = document.createElement("div");
@@ -525,8 +643,8 @@ async function updateTokenHistogram(model, days = 7) {
         tooltip.style.left = `${e.pageX - histogram.getBoundingClientRect().left}px`;
         tooltip.style.top = `${e.pageY - histogram.getBoundingClientRect().top - 30}px`;
         tooltip.textContent = `${formatDate(date)}
-Input: ${formatNumber(inputTokens)}
-Output: ${formatNumber(outputTokens)}`;
+Input: ${formatTokenLimit(inputTokens)}
+Output: ${formatTokenLimit(outputTokens)}`;
       });
 
       bar.addEventListener("mouseout", () => {
@@ -541,9 +659,11 @@ Output: ${formatNumber(outputTokens)}`;
   });
 
   // Update totals
-  document.getElementById("totalInput").textContent = formatNumber(totalInput);
-  document.getElementById("totalOutput").textContent =
-    formatNumber(totalOutput);
+  document.getElementById("totalInput").textContent = formatTokenLimit(totalInput);
+  document.getElementById("totalOutput").textContent = formatTokenLimit(totalOutput);
+
+  // Update limit indicators
+  await updateLimitIndicators(model, todayTotal, monthTotal);
 }
 
 async function suggestRelatedWords(currentLang, currentLangData) {
@@ -593,6 +713,15 @@ async function handleSuggestWords(currentLang, currentLangData) {
 
   try {
     let suggestions = await suggestRelatedWords(currentLang, currentLangData);
+    
+    if (suggestions.error) {
+      if (suggestions.error.includes('token limit')) {
+        alert(MESSAGES.TOKEN_LIMIT_ERROR);
+      } else {
+        alert(suggestions.error || MESSAGES.SUGGESTION_ERROR);
+      }
+      return;
+    }
     
     // Create a modal to display suggestions
     const modal = document.createElement('div');

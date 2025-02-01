@@ -1,13 +1,7 @@
 import { trackTokens } from './tokenCounter.js';
+import { LLM_PROVIDERS } from './constants.js';
 
 // LLM Provider Configuration
-export const LLM_PROVIDERS = {
-  OPENAI: 'openai',
-  ANTHROPIC: 'anthropic',
-  OPENWEBUI: 'openwebui',
-  GOOGLE: 'google'
-};
-
 export const DEFAULT_PROVIDER = LLM_PROVIDERS.OPENAI;
 
 export const SYSTEM_PROMPT = `You are a specialized translation assistant that performs partial text translation with strict rules:

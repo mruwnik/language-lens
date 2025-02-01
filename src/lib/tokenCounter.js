@@ -1,3 +1,5 @@
+import { loadLlmSettings } from "../lib/settings.js";
+
 /**
  * Get token count for a string based on model
  * This is a rough estimate - for accurate counts you'd want to use model-specific tokenizers
@@ -10,8 +12,16 @@ function estimateTokens(text, model) {
 /**
  * Get today's date in YYYY-MM-DD format
  */
-function getDateKey() {
+export function getDateKey() {
   return new Date().toISOString().split('T')[0];
+}
+
+/**
+ * Get the first day of the current month in YYYY-MM-DD format
+ */
+export function getMonthStartKey() {
+  const date = new Date();
+  return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
 }
 
 /**
@@ -88,4 +98,48 @@ export async function trackTokens(model, prompt, systemPrompt, response, actualC
   
   await updateTokenCount(model, inputTokens, outputTokens);
   return { inputTokens, outputTokens };
+}
+
+/**
+ * Check if a token operation would exceed limits
+ * @returns {Promise<{allowed: boolean, reason?: string}>}
+ */
+export async function checkTokenLimits(model, inputTokens, outputTokens) {
+  const settings = await loadLlmSettings();
+  if (!settings.dailyTokenLimit && !settings.monthlyTokenLimit) {
+    return { allowed: true };
+  }
+
+  const totalNewTokens = inputTokens + outputTokens;
+  const today = getDateKey();
+  const monthStart = getMonthStartKey();
+  
+  // Get current usage
+  const todayUsage = await getTokenUsage(model, today, today);
+  const monthUsage = await getTokenUsage(model, monthStart, today);
+  
+  const todayTotal = todayUsage.input + todayUsage.output;
+  const monthTotal = monthUsage.input + monthUsage.output;
+
+  // Check daily limit
+  if (settings.dailyTokenLimit > 0) {
+    if (todayTotal + totalNewTokens > settings.dailyTokenLimit) {
+      return {
+        allowed: false,
+        reason: `Daily token limit of ${settings.dailyTokenLimit} would be exceeded. Current usage: ${todayTotal}`
+      };
+    }
+  }
+
+  // Check monthly limit
+  if (settings.monthlyTokenLimit > 0) {
+    if (monthTotal + totalNewTokens > settings.monthlyTokenLimit) {
+      return {
+        allowed: false,
+        reason: `Monthly token limit of ${settings.monthlyTokenLimit} would be exceeded. Current usage: ${monthTotal}`
+      };
+    }
+  }
+
+  return { allowed: true };
 } 

@@ -11,7 +11,8 @@
     "dev": "rollup -c -w",
     "lint": "eslint src/**/*.js",
     "format": "prettier --write src/**/*.{js,html,css}",
-    "build:package": "node scripts/build.js"
+    "build:package": "node scripts/build.js",
+    "make-icons": "node scripts/make-icons.js"
   },
   "keywords": [
     "language-learning",
