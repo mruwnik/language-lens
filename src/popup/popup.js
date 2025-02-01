@@ -9,7 +9,6 @@ import {
 } from "../lib/settings.js";
 import { loadTokenCounts } from "../lib/tokenCounter.js";
 import { formatTooltip, getDisplayText, speakWord } from "../lib/wordDisplay.js";
-import { callLlmProvider } from '../lib/llmProviders.js';
 
 console.log("Starting popup.js");
 
@@ -373,35 +372,33 @@ export const updateFormPlaceholders = (
 
 // Update model options based on selected provider
 async function updateModelOptions(provider) {
-  const modelSelect = document.getElementById("llmModel");
-  modelSelect.innerHTML = ""; // Clear existing options
+  const llmModel = document.getElementById("llmModel");
+  llmModel.innerHTML = ""; // Clear existing options
 
   const models = await getAvailableModels(provider);
   models.forEach((model) => {
     const option = document.createElement("option");
     option.value = model;
     option.textContent = model;
-    modelSelect.appendChild(option);
+    llmModel.appendChild(option);
   });
 
   // Select default model for provider
-  modelSelect.value = DEFAULT_MODELS[provider];
+  llmModel.value = DEFAULT_MODELS[provider];
 }
 
 // Load and save LLM settings
-async function initializeLlmSettings() {
-  const settings = await loadLlmSettings();
-
-  const providerSelect = document.getElementById("llmProvider");
-  const apiKeyInput = document.getElementById("apiKey");
-
-  providerSelect.value = settings.provider;
-  apiKeyInput.value = settings.apiKey || "";
+async function initializeLlmSettings(settings, { llmProvider, apiKey, LLMDetails }) {
+  llmProvider.value = settings.provider;
+  apiKey.value = settings.apiKey || "";
 
   await updateModelOptions(settings.provider);
 
+  if (!settings.apiKey) {
+    LLMDetails.setAttribute('open', '');
+  }
   if (settings.model) {
-    document.getElementById("llmModel").value = settings.model;
+    llmModel.value = settings.model;
   }
 }
 
@@ -675,11 +672,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     llmModel: document.getElementById("llmModel"),
     saveSettingsBtn: document.getElementById("saveSettings"),
     timeRange: document.getElementById("timeRange"),
+    LLMDetails: document.getElementById("LLMDetails"),
+    apiKey: document.getElementById("apiKey"),
+    tokenUsageDetails: document.getElementById("tokenUsageDetails"),
   };
 
   // Initialize LLM settings
   const settings = await loadLlmSettings();
-  await initializeLlmSettings();
+  await initializeLlmSettings(settings, elements);
 
   // Provider change handler
   elements.llmProvider.addEventListener("change", async () => {
