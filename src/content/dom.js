@@ -45,7 +45,7 @@ export const translationPopup = (state, text, translations) => {
     
     // Click handler for speaker icons
     tooltip.addEventListener('click', (e) => {
-        const iconParent = e.target.closest('.speak-icon');
+        const iconParent = e.target.closest('.language-lens-speak-icon');
         if (iconParent) {
             e.stopPropagation();
             const text = iconParent.dataset.text;

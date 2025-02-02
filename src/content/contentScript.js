@@ -1,9 +1,6 @@
 import { TOOLTIP_STYLES } from './styles.js';
 import { throttle, isVisible } from '../lib/utils.js';
-import { 
-    splitIntoSentences, 
-    containsAnyWord
-} from '../lib/textProcessing.js';
+import { containsAnyWord } from '../lib/textProcessing.js';
 import { replaceNode, collectTextNodes, processedNodes, processTextNodes } from './dom.js';
 import { TranslationState, MIN_KANJI_VIEW_COUNT } from './state.js';
 import { shouldProcessDomain } from '../lib/settings.js';
