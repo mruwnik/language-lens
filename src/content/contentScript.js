@@ -28,6 +28,8 @@ const addStyles = () => {
 };
 
 const translateAndReplace = async (state, sentences, translations) => {
+    if (!translations) return;
+
     // Group sentences by node, handling multiple nodes per sentence
     const nodeMap = new Map();
     sentences.forEach(s => {
@@ -151,15 +153,12 @@ const initialize = async () => {
 
         addStyles();
         await state.loadFromStorage();
-        
         // Wait for document to be ready
         if (document.readyState === 'loading') {
             await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve));
         }
-
         // Initial processing of visible content
         await processNode(state, document.body);
-
         // Set up intersection observer for dynamic loading
         const observer = setupIntersectionObserver(state);
 
@@ -257,15 +256,38 @@ async function translateText(sentences, knownWords) {
     }
 
     try {
-        const { translations } = await browser.runtime.sendMessage({
-            type: "PARTIAL_TRANSLATE",
+        // Create a port for streaming communication
+        const port = browser.runtime.connect();
+        let allTranslations = {};
+
+        // Set up promise to wait for completion
+        const translationComplete = new Promise((resolve, reject) => {
+            port.onMessage.addListener((message) => {
+                switch (message.type) {
+                    case 'PARTIAL_RESULT':
+                        // Merge new translations and update UI
+                        allTranslations = { ...allTranslations, ...message.translations };
+                        translateAndReplace(state, sentences, allTranslations);
+                        break;
+                    case 'TRANSLATION_COMPLETE':
+                        resolve(message.translations);
+                        port.disconnect();
+                        break;
+                }
+            });
+        });
+
+        // Send translation request
+        port.postMessage({
+            type: 'PARTIAL_TRANSLATE',
             payload: {
                 sentences: relevantSentences,
                 knownWords: wordArray
             }
         });
-        console.log('translations', translations);
 
+        // Wait for all translations to complete
+        const translations = await translationComplete;
         return translations;
     } catch (err) {
         console.error("Translation failed:", err);

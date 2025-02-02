@@ -116,22 +116,28 @@ export const collectTextNodes = (state, node, nodes = []) => {
     return nodes;
 }; 
 
+
+const idsGenerator = (() => {
+    let counter = 0;
+    return () => {
+        counter = (counter + 1) % Number.MAX_SAFE_INTEGER;
+        return `s${counter}`;
+    };
+})();
+
 export const processTextNodes = (nodes) => {
-    let sentenceId = 0;
     const uniqueSentences = new Map(); // text -> { id, nodes: Set(nodes) }
 
     // Collect unique sentences while preserving node mapping
     for (const node of nodes) {
         const sentences = splitIntoSentences(node.text);
         
-        sentences.forEach(s => {
+        sentences.filter(s => s.trim()).forEach(s => {
             const text = s.trim();
-            if (!text) return;
 
             let sentenceData = uniqueSentences.get(text);
             if (!sentenceData) {
-                const id = `s${sentenceId++}`;
-                sentenceData = { id, text, nodes: new Set() };
+                sentenceData = { id: idsGenerator(), text, nodes: new Set() };
                 uniqueSentences.set(text, sentenceData);
             }
             sentenceData.nodes.add(node.node);

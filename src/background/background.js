@@ -72,7 +72,7 @@ const batchSentences = (sentences) => {
 
 const translateBatch = async (batch, relevantWords, settings) => {
   const translationInput = batch
-    .map(s => `<s id="${s.id}">${s.text}</s>`)
+    .map(s => `<s id="${s.id}">${s.text}`)
     .join('\n');
 
   // Estimate tokens before making the call
@@ -176,7 +176,72 @@ const getBatch = async (batch, relevantWords, settings) => {
   return translations;
 }
 
-const handlePartialTranslate = async (sentences, knownWords) => {
+const translateAll = async (sentences, relevantWords, sendMessage) => {
+    // Load settings including provider, model, and API key
+    const settings = await loadLlmSettings();
+        
+    if (!settings.apiKey) {
+        console.warn(`No API key found for provider: ${settings.llmProvider}`);
+        return
+    }
+
+    Object.values(sentences).forEach(text => {
+        setPendingTranslation(text, relevantWords);
+    });
+
+    // Process each batch with retries and delays
+    const batches = batchSentences(sentences);
+    let translations = {};
+    try {
+        // Process all batches in parallel with Promise.all
+        const batchPromises = batches.map(async (batch, index) => {
+            try {
+                const batchTranslations = await getBatch(batch, relevantWords, settings);
+                if (!batchTranslations) {
+                    return {};
+                }
+                // Stream each batch of translations as they complete
+                if (!sendMessage({ type: 'PARTIAL_RESULT', translations: batchTranslations })) {
+                    console.log('Port disconnected, stopping translation');
+                    throw new Error('Port disconnected');
+                }
+                return batchTranslations;
+            } catch (err) {
+                console.error(`Error in batch ${index}:`, err);
+                Object.values(batch).forEach(text => {
+                    rejectPendingTranslation(text, relevantWords, err);
+                });
+                // Return empty translations for failed batch to maintain order
+                return {};
+            }
+        });
+
+        const results = await Promise.all(batchPromises);
+        translations = Object.assign({}, ...results);
+    } catch (err) {
+        console.error('Error in handlePartialTranslate:', err);
+    }
+}
+
+const handlePartialTranslate = async (sentences, knownWords, port) => {
+    // Add disconnect handler
+    let isDisconnected = false;
+    port.onDisconnect.addListener(() => {
+        isDisconnected = true;
+    });
+
+    const sendMessage = (msg) => {
+        if (!isDisconnected && !port.error) {
+            try {
+                port.postMessage(msg);
+            } catch (e) {
+                console.log('Port disconnected, stopping message stream');
+                isDisconnected = true;
+            }
+        }
+        return !isDisconnected;
+    };
+
     // Filter to relevant words first, using word boundaries
     const relevantWords = knownWords.filter(word => 
         word.en && word.native && // Only use words with both English and native translations
@@ -184,50 +249,32 @@ const handlePartialTranslate = async (sentences, knownWords) => {
     );
 
     if (!relevantWords.length) {
-        return { translations: {} };
+        sendMessage({ type: 'TRANSLATION_COMPLETE' });
+        console.log('No relevant words found');
+        return { };
     }
 
     // Check cache and pending translations for each sentence
     const { cached, pending, uncached } = getCached(sentences, relevantWords);
+    
+    // Send cached results immediately
+    if (Object.keys(cached).length > 0) {
+        sendMessage({ type: 'PARTIAL_RESULT', translations: cached });
+    }
+    if (Object.keys(pending).length > 0) {
+      const resolved = await Promise.all(pending);
+      sendMessage({ type: 'PARTIAL_RESULT', translations: Object.fromEntries(resolved) });
+    }
     if (Object.keys(uncached).length === 0) {
-        const resolved = await Promise.all(pending);
-        return { translations: { ...cached, ...Object.fromEntries(resolved) } };
+      sendMessage({ type: 'TRANSLATION_COMPLETE' });
+      return {  };
     }
 
-    // Load settings including provider, model, and API key
-    const settings = await loadLlmSettings();
-        
-    if (!settings.apiKey) {
-        console.warn(`No API key found for provider: ${settings.llmProvider}`);
-        return { translations: { ...cached, ...uncached } };
-    }
-
-    Object.values(uncached).forEach(text => {
-        setPendingTranslation(text, relevantWords);
-    });
-
-    // Process each batch with retries and delays
-    const batches = batchSentences(uncached);
-    let translations = {};
-    try {
-        for (const batch of batches) {
-            try {
-                const batchTranslations = await getBatch(batch, relevantWords, settings);
-                translations = { ...translations, ...batchTranslations };
-            } catch (err) {
-                console.error('Error in getBatch:', err);
-                translations = { ...translations, ...batch };
-                Object.values(batch).forEach(text => {
-                    rejectPendingTranslation(text, relevantWords, err);
-                });
-            }
-        }
-    } catch (err) {
-        console.error('Error in handlePartialTranslate:', err);
-    }
-    await cleanupCache();
-    const resolved = await Promise.all(pending);
-    return { translations: { ...translations, ...cached, ...Object.fromEntries(resolved) } };
+    await translateAll(uncached, relevantWords, sendMessage);
+    
+    // Send final complete message if not disconnected
+    sendMessage({ type: 'TRANSLATION_COMPLETE' });
+    return {  };
 };
 
 const initializeNewWord = (word) => {
@@ -349,25 +396,27 @@ async function initialize() {
 }
 
 // Update the message listener to handle settings changes
-browser.runtime.onMessage.addListener((request, sender) => {
-  let result = {};
-  switch (request.type) {
-    case "PARTIAL_TRANSLATE":
-      result = handlePartialTranslate(request.payload.sentences, request.payload.knownWords);
-      break;
-    case "REQUEST_NEW_WORDS":
-      result = handleRequestNewWords(request.payload);
-      break;
-    case "SETTINGS_UPDATED":
-    case "TOKEN_COUNT_UPDATED":
-      result = updateExtensionIcon().then(() => ({}));
-      break;
-    default:
-      console.warn(`Unknown message type: ${request.type}`);
-      return Promise.resolve({});
-  }
-  updateExtensionIcon().then(() => ({}));
-  return result;
+browser.runtime.onConnect.addListener((port) => {
+    port.onMessage.addListener((request) => {
+        let result = {};
+        switch (request.type) {
+            case "PARTIAL_TRANSLATE":
+                result = handlePartialTranslate(request.payload.sentences, request.payload.knownWords, port);
+                break;
+            case "REQUEST_NEW_WORDS":
+                result = handleRequestNewWords(request.payload);
+                break;
+            case "SETTINGS_UPDATED":
+            case "TOKEN_COUNT_UPDATED":
+                result = updateExtensionIcon().then(() => ({}));
+                break;
+            default:
+                console.warn(`Unknown message type: ${request.type}`);
+                return Promise.resolve({});
+        }
+        updateExtensionIcon().then(() => ({}));
+        return result;
+    });
 });
 
 // Initialize on extension load
