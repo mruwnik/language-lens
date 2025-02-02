@@ -38,7 +38,6 @@ const translateAndReplace = async (state, sentences, translations) => {
 
     // Replace text in each node
     nodeMap.entries().forEach(([node, nodeTranslations]) => {
-        console.log(node, nodeTranslations, node.textContent);
         replaceNode(state, node, nodeTranslations, state.knownWords);
     });
 

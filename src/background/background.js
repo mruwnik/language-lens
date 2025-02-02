@@ -15,6 +15,9 @@ import {
   setCacheEntry,
   cleanupCache,
   saveCache,
+  getPendingTranslation,
+  setPendingTranslation,
+  rejectPendingTranslation
 } from '../lib/translationCache.js';
 
 // Batch configuration
@@ -64,7 +67,6 @@ const batchSentences = (sentences) => {
     batches.push(currentBatch);
   }
 
-  console.log('batches', batches);
   return batches;
 };
 
@@ -126,22 +128,26 @@ const getCached = (sentences, relevantWords) => {
             .map(([id, text]) => [id, getWord(text)])
             .filter(([, text]) => text)
     );
+    const pending = Object.entries(sentences)
+            .map(([id, text]) => [id, getPendingTranslation(text, relevantWords)])
+            .filter(([, pending]) => pending)
+            .map(([id, pending]) => pending.promise.then(translation => [id, translation]))
 
     const uncached = Object.fromEntries(
-        Object.entries(sentences).filter(([id]) => !cached[id])
+        Object.entries(sentences).filter(([id, text]) => !cached[id] && !getPendingTranslation(text, relevantWords))
     );
 
-    return { cached, uncached };
+    return { cached, pending, uncached };
 }
 
 
-const getBatch = async (batch, relevantWords, settings, now) => {
+const getBatch = async (batch, relevantWords, settings) => {
   let retries = 0;
   let success = false;
   let translations = {};
   while (!success && retries < MAX_RETRIES) {
       try {
-          const batchTranslations = await translateBatch(batch, relevantWords, settings, now);
+          const batchTranslations = await translateBatch(batch, relevantWords, settings);
           translations = {
               ...translations,
               ...Object.fromEntries(batchTranslations.map(t => [t.id, t.text]))
@@ -181,13 +187,11 @@ const handlePartialTranslate = async (sentences, knownWords) => {
         return { translations: {} };
     }
 
-    // Check cache for each sentence
-    const now = Date.now();
-
-    const { cached, uncached: uncachedSentences } = getCached(sentences, relevantWords);
-    // If all sentences were cached, return immediately
-    if (Object.keys(uncachedSentences).length === 0) {
-        return { translations: cached };
+    // Check cache and pending translations for each sentence
+    const { cached, pending, uncached } = getCached(sentences, relevantWords);
+    if (Object.keys(uncached).length === 0) {
+        const resolved = await Promise.all(pending);
+        return { translations: { ...cached, ...Object.fromEntries(resolved) } };
     }
 
     // Load settings including provider, model, and API key
@@ -195,27 +199,35 @@ const handlePartialTranslate = async (sentences, knownWords) => {
         
     if (!settings.apiKey) {
         console.warn(`No API key found for provider: ${settings.llmProvider}`);
-        return { translations: { ...cached, ...uncachedSentences } };
+        return { translations: { ...cached, ...uncached } };
     }
 
+    Object.values(uncached).forEach(text => {
+        setPendingTranslation(text, relevantWords);
+    });
+
     // Process each batch with retries and delays
-    const batches = batchSentences(uncachedSentences);
+    const batches = batchSentences(uncached);
     let translations = {};
     try {
         for (const batch of batches) {
             try {
-                const batchTranslations = await getBatch(batch, relevantWords, settings, now);
+                const batchTranslations = await getBatch(batch, relevantWords, settings);
                 translations = { ...translations, ...batchTranslations };
             } catch (err) {
                 console.error('Error in getBatch:', err);
                 translations = { ...translations, ...batch };
+                Object.values(batch).forEach(text => {
+                    rejectPendingTranslation(text, relevantWords, err);
+                });
             }
         }
     } catch (err) {
         console.error('Error in handlePartialTranslate:', err);
     }
     await cleanupCache();
-    return { translations };
+    const resolved = await Promise.all(pending);
+    return { translations: { ...translations, ...cached, ...Object.fromEntries(resolved) } };
 };
 
 const initializeNewWord = (word) => {

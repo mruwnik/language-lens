@@ -77,8 +77,46 @@ export const getCachedTranslation = (text, relevantWords) => {
     return cached && now - cached.timestamp < CACHE_EXPIRY_MS ? cached.text : null;
 }
 
+// Track pending translation requests
+const pendingTranslations = new Map();
+
+export const getPendingTranslation = (text, relevantWords) => {
+  const cacheKey = makeTranslationCacheKey(text, relevantWords);
+  return pendingTranslations.get(cacheKey);
+};
+
+export const setPendingTranslation = (text, relevantWords) => {
+  const cacheKey = makeTranslationCacheKey(text, relevantWords);
+  let resolve, reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  pendingTranslations.set(cacheKey, { promise, resolve, reject });
+  return promise;
+};
+
+export const resolvePendingTranslation = (text, relevantWords, translation) => {
+  const cacheKey = makeTranslationCacheKey(text, relevantWords);
+  const pending = pendingTranslations.get(cacheKey);
+  if (pending) {
+    pending.resolve(translation);
+    pendingTranslations.delete(cacheKey);
+  }
+};
+
+export const rejectPendingTranslation = (text, relevantWords, error) => {
+  const cacheKey = makeTranslationCacheKey(text, relevantWords);
+  const pending = pendingTranslations.get(cacheKey);
+  if (pending) {
+    pending.reject(error);
+    pendingTranslations.delete(cacheKey);
+  }
+};
+
 export const setCacheEntry = (text, relevantWords, translation) => {
   const timestamp = Date.now();
-  const cacheKey = makeTranslationCacheKey(text, relevantWords)
+  const cacheKey = makeTranslationCacheKey(text, relevantWords);
   translationCache[cacheKey] = { text: translation, timestamp };
+  resolvePendingTranslation(text, relevantWords, translation);
 }

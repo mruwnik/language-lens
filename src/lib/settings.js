@@ -78,7 +78,7 @@ export async function getAvailableModels(provider) {
  * Supports wildcards in both domain and path parts
  */
 export function matchesUrlPattern(url, pattern) {
-  const regexPattern = new RegExp(`^${pattern.replace(/\./g, '\\.').replace(/\*/g, '.*?')}$`);
+  const regexPattern = new RegExp(`^.*?${pattern.replace(/\./g, '\\.').replace(/\*/g, '.*?')}.*?$`);
   return regexPattern.test(url);
 };
 

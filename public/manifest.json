@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Language Lens",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "description": "Transform your browsing by replacing English words with foreign equivalents as you read. Choose which words to replace, toggle difficulty with kanji/character support, and reinforce learning through hover translations and native pronunciation.",
     
     "action": {
@@ -63,4 +63,3 @@
     "author": "Nemo",
     "homepage_url": "https://github.com/mruwnik/language-lens.git"
 }
-  
